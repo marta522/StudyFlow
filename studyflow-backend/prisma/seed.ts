@@ -382,7 +382,7 @@ async function main() {
   console.log('Administrator: admin@studyflow.pl');
   console.log('Korepetytorzy: tutor@studyflow.pl, dariusz@studyflow.pl');
   console.log('Uczniowie: student@studyflow.pl, anna@studyflow.pl');
-  console.log('Hasło dla wszystkich kont: haslo123');
+  console.log('Hasło do wszystkich kont: haslo123');
   console.log(
     `Utworzono ${[booking1, booking2, booking3, booking4].length} rezerwacje. Dostępny termin ma ID ${availableEnglish.id_lessons}.`,
   );

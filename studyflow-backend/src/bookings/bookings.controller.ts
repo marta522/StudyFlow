@@ -20,6 +20,8 @@ import { CreateBookingDto } from './dto/create-booking.dto';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { SearchScheduleDto } from './dto/search-schedule.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
+import { CreateAdminLessonDto } from './dto/create-admin-lesson.dto';
+import { UpdateAdminLessonDto } from './dto/update-admin-lesson.dto';
 
 interface AuthenticatedRequest {
   user: AuthenticatedUser;
@@ -60,6 +62,30 @@ export class BookingsController {
     @Param('id', ParseIntPipe) lessonId: number,
   ) {
     return this.bookingsService.deleteLesson(request.user.id, lessonId);
+  }
+
+  @Roles('admin')
+  @Post('admin/lessons')
+  createAdminLesson(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: CreateAdminLessonDto,
+  ) {
+    return this.bookingsService.createAdminLesson(request.user.id, dto);
+  }
+
+  @Roles('admin')
+  @Patch('admin/lessons/:id')
+  updateAdminLesson(
+    @Param('id', ParseIntPipe) lessonId: number,
+    @Body() dto: UpdateAdminLessonDto,
+  ) {
+    return this.bookingsService.updateAdminLesson(lessonId, dto);
+  }
+
+  @Roles('admin')
+  @Delete('admin/lessons/:id')
+  cancelAdminLesson(@Param('id', ParseIntPipe) lessonId: number) {
+    return this.bookingsService.cancelAdminLesson(lessonId);
   }
 
   @Roles('student', 'tutor', 'admin')

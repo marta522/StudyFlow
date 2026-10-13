@@ -8,6 +8,7 @@ interface JwtPayload {
   sub: number;
   email: string;
   role: string;
+  tokenVersion: number;
 }
 
 export interface AuthenticatedUser {
@@ -37,7 +38,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       include: { role: true },
     });
 
-    if (!user || user.status === 'BLOCKED') {
+    if (
+      !user ||
+      user.status === 'BLOCKED' ||
+      payload.tokenVersion !== user.token_version
+    ) {
       throw new UnauthorizedException('Konto nieaktywne lub nie istnieje.');
     }
 

@@ -38,7 +38,7 @@ export function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
-  const [roleId, setRoleId] = useState(2);
+  const [role, setRole] = useState<"student" | "tutor">("student");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const { login } = useAuth();
@@ -56,7 +56,7 @@ export function RegisterPage() {
         email,
         password,
         phone: phone || undefined,
-        role_id: Number(roleId),
+        role,
       });
 
       login(data.access_token, data.user);
@@ -204,12 +204,14 @@ export function RegisterPage() {
             </label>
             <select
               id="roleId"
-              value={roleId}
-              onChange={(event) => setRoleId(Number(event.target.value))}
+              value={role}
+              onChange={(event) =>
+                setRole(event.target.value as "student" | "tutor")
+              }
               className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2.5 text-sm text-white outline-none transition focus:border-brand-yellow focus:ring-2 focus:ring-brand-yellow/20"
             >
-              <option value={2}>Uczeń / Student</option>
-              <option value={3}>Korepetytor / Nauczyciel</option>
+              <option value="student">Uczeń / Student</option>
+              <option value="tutor">Korepetytor / Nauczyciel</option>
             </select>
           </div>
 

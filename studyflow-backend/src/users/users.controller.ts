@@ -50,6 +50,11 @@ export class UsersController {
     return this.usersService.getFinancialReports();
   }
 
+  @Get('reports/financial/:id')
+  getFinancialReport(@Param('id', ParseIntPipe) reportId: number) {
+    return this.usersService.getFinancialReport(reportId);
+  }
+
   @Post('reports/financial')
   generateFinancialReport(
     @Req() request: AuthenticatedRequest,

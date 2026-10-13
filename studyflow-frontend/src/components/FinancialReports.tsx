@@ -112,13 +112,26 @@ export function FinancialReports() {
     setLoading(true);
     setError(null);
     try {
-      const { data } =
-        await api.get<FinancialReport[]>("/users/reports/financial");
+      const { data } = await api.get<FinancialReport[]>(
+        "/users/reports/financial",
+      );
       setReports(data);
     } catch (requestError: unknown) {
       setError(getErrorMessage(requestError));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadReport(reportId: number) {
+    setError(null);
+    try {
+      const { data } = await api.get<FinancialReport>(
+        `/users/reports/financial/${reportId}`,
+      );
+      setCurrentReport(data);
+    } catch (requestError: unknown) {
+      setError(getErrorMessage(requestError));
     }
   }
 
@@ -300,6 +313,17 @@ export function FinancialReports() {
                   >
                     <Download className="size-4" aria-hidden="true" />
                     CSV
+                  </button>
+                )}
+                {currentReport?.id_financial_reports !==
+                  report.id_financial_reports && (
+                  <button
+                    type="button"
+                    onClick={() => void loadReport(report.id_financial_reports)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-brand-cardBorder px-3 py-2 text-sm text-brand-yellow transition hover:border-brand-yellow"
+                  >
+                    <Download className="size-4" aria-hidden="true" />
+                    Otwórz / pobierz
                   </button>
                 )}
               </article>

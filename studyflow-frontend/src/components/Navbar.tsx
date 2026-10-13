@@ -1,6 +1,8 @@
 import { BookOpen, LogOut, Menu, X } from "lucide-react";
+import axios from "axios";
 import { Link, useNavigate } from "react-router-dom";
 import { useState } from "react";
+import api from "../api/axios";
 import { useAuth } from "../context/useAuth";
 
 interface NavbarProps {
@@ -46,10 +48,22 @@ export function Navbar({ activeTab, setActiveTab }: NavbarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const roleLinks = user ? (ROLE_LINKS[user.role] ?? []) : [];
 
-  function handleLogout() {
+  async function handleLogout() {
     setMobileMenuOpen(false);
-    logout();
-    navigate("/login", { replace: true });
+    try {
+      await api.post("/auth/logout");
+    } catch (error: unknown) {
+      const message = axios.isAxiosError<{ message?: string }>(error)
+        ? error.response?.data?.message
+        : undefined;
+      const warning =
+        message ??
+        "Sesja lokalna została zakończona, ale serwer nie potwierdził unieważnienia tokenu.";
+      sessionStorage.setItem("logoutWarning", warning);
+    } finally {
+      logout();
+      navigate("/login", { replace: true });
+    }
   }
 
   function handleTabClick(tab: string) {
@@ -124,7 +138,7 @@ export function Navbar({ activeTab, setActiveTab }: NavbarProps) {
               </span>
               <button
                 type="button"
-                onClick={handleLogout}
+                onClick={() => void handleLogout()}
                 title="Wyloguj się"
                 aria-label="Wyloguj się"
                 className="rounded-lg p-2 text-brand-textMuted transition hover:bg-red-500/10 hover:text-red-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-yellow"

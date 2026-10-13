@@ -1,10 +1,9 @@
 import {
   IsEmail,
-  IsIn,
-  IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsIn,
   MinLength,
 } from 'class-validator';
 
@@ -29,7 +28,7 @@ export class RegisterDto {
   @IsString()
   phone?: string;
 
-  @IsInt()
-  @IsIn([2, 3])
-  role_id: number;
+  @IsString()
+  @IsIn(['student', 'tutor'])
+  role: 'student' | 'tutor';
 }

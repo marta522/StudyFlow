@@ -5,7 +5,7 @@ import {
   IsString,
   MaxLength,
 } from 'class-validator';
-import { SubjectStatus } from '@prisma/client';
+import { SubjectStatus } from '../subject-status.enum';
 
 export class UpdateSubjectDto {
   @IsOptional()

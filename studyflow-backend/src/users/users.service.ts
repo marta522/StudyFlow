@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -14,6 +15,42 @@ import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 @Injectable()
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
+
+  findStudents(requesterId: number, role: string, search?: string) {
+    const normalizedSearch = search?.trim();
+    return this.prisma.user.findMany({
+      where: {
+        role: { name: 'student' },
+        ...(normalizedSearch && {
+          OR: [
+            { first_name: { contains: normalizedSearch } },
+            { last_name: { contains: normalizedSearch } },
+            { email: { contains: normalizedSearch } },
+          ],
+        }),
+        ...(role === 'tutor' && {
+          bookings_as_student: {
+            some: {
+              status: { not: 'CANCELLED' },
+              lesson: {
+                tutor_id: requesterId,
+                status: { not: 'CANCELLED' },
+              },
+            },
+          },
+        }),
+      },
+      select: {
+        id_users: true,
+        first_name: true,
+        last_name: true,
+        email: true,
+        phone: true,
+        status: true,
+      },
+      orderBy: [{ last_name: 'asc' }, { first_name: 'asc' }],
+    });
+  }
 
   findStudentsAndTutors() {
     return this.prisma.user.findMany({
@@ -170,8 +207,8 @@ export class UsersService {
     };
   }
 
-  getFinancialReports() {
-    return this.prisma.financialReport.findMany({
+  async getFinancialReports() {
+    const reports = await this.prisma.financialReport.findMany({
       include: {
         generated_by: {
           select: { first_name: true, last_name: true },
@@ -179,6 +216,32 @@ export class UsersService {
       },
       orderBy: [{ year: 'desc' }, { month: 'desc' }, { created_at: 'desc' }],
     });
+    return reports.map((report) => ({
+      ...report,
+      details: this.parseFinancialReportDetails(report.details),
+    }));
+  }
+
+  async getFinancialReport(reportId: number) {
+    const report = await this.prisma.financialReport.findUnique({
+      where: { id_financial_reports: reportId },
+      include: {
+        generated_by: {
+          select: { first_name: true, last_name: true },
+        },
+      },
+    });
+    if (!report) {
+      throw new NotFoundException('Raport finansowy nie został znaleziony.');
+    }
+
+    const details = this.parseFinancialReportDetails(report.details);
+
+    return {
+      ...report,
+      details,
+      lesson_count: details.length,
+    };
   }
 
   async generateFinancialReport(
@@ -249,7 +312,7 @@ export class UsersService {
 
       return lesson.bookings.map((booking) => ({
         lesson_id: lesson.id_lessons,
-        lesson_date: lesson.lesson_date,
+        lesson_date: lesson.lesson_date.toISOString().slice(0, 10),
         start_time: lesson.start_time,
         end_time: lesson.end_time,
         subject: lesson.subject.name,
@@ -269,6 +332,7 @@ export class UsersService {
         generated_by_user_id: adminId,
         total_student_cost: roundCurrency(totalStudentCost),
         total_tutor_salary: roundCurrency(totalTutorSalary),
+        details: JSON.stringify(details),
       },
     });
 
@@ -382,5 +446,27 @@ export class UsersService {
     }
 
     return user;
+  }
+
+  private parseFinancialReportDetails(detailsJson: string): unknown[] {
+    let details: unknown;
+    try {
+      details = JSON.parse(detailsJson);
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new InternalServerErrorException(
+          'Zapisany raport finansowy zawiera nieprawidłowe szczegóły.',
+        );
+      }
+      throw error;
+    }
+
+    if (!Array.isArray(details)) {
+      throw new InternalServerErrorException(
+        'Zapisany raport finansowy zawiera nieprawidłowe szczegóły.',
+      );
+    }
+
+    return details;
   }
 }

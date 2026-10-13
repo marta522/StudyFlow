@@ -4,8 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, RequestStatus } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { RequestStatus } from './subject-status.enum';
 import { AssignTutorSubjectDto } from './dto/assign-tutor-subject.dto';
 import { CreateSubjectRequestDto } from './dto/create-subject-request.dto';
 import { CreateSubjectDto } from './dto/create-subject.dto';
@@ -39,6 +40,9 @@ export class SubjectsService {
   findAllForAdmin() {
     return this.prisma.subject.findMany({
       include: {
+        tutor_subjects: {
+          select: { tutor_id: true },
+        },
         _count: {
           select: {
             tutor_subjects: true,
@@ -111,6 +115,25 @@ export class SubjectsService {
       }
       throw error;
     }
+  }
+
+  async deactivateSubject(subjectId: number) {
+    const subject = await this.prisma.subject.findUnique({
+      where: { id_subjects: subjectId },
+      select: { id_subjects: true, status: true },
+    });
+    if (!subject) {
+      throw new NotFoundException('Przedmiot nie został znaleziony.');
+    }
+    if (subject.status === 'INACTIVE') {
+      return subject;
+    }
+
+    return this.prisma.subject.update({
+      where: { id_subjects: subjectId },
+      data: { status: 'INACTIVE' },
+      select: { id_subjects: true, status: true },
+    });
   }
 
   async assignToTutor(tutorId: number, dto: AssignTutorSubjectDto) {

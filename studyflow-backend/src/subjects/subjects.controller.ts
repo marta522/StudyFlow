@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseIntPipe,
@@ -55,6 +56,13 @@ export class SubjectsController {
     @Body() dto: UpdateSubjectDto,
   ) {
     return this.subjectsService.updateSubject(subjectId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @Delete(':id')
+  deactivateSubject(@Param('id', ParseIntPipe) subjectId: number) {
+    return this.subjectsService.deactivateSubject(subjectId);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

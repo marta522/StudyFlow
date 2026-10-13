@@ -1,5 +1,5 @@
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -7,38 +7,9 @@ generator client {
   provider = "prisma-client-js"
 }
 
-enum AccountStatus {
-  ACTIVE
-  BLOCKED
-  PENDING
-}
-
-enum SubjectStatus {
-  ACTIVE
-  INACTIVE
-}
-
-enum RequestStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
-
-enum LessonStatus {
-  SCHEDULED
-  COMPLETED
-  CANCELLED
-}
-
-enum BookingStatus {
-  CONFIRMED
-  CANCELLED
-  PENDING
-}
-
 model Role {
   id_roles Int    @id @default(autoincrement())
-  name     String @unique @db.VarChar(45)
+  name     String @unique
 
   users User[]
 
@@ -47,15 +18,16 @@ model Role {
 
 model User {
   id_users      Int           @id @default(autoincrement())
-  first_name    String        @db.VarChar(45)
-  last_name     String        @db.VarChar(45)
-  email         String        @unique @db.VarChar(100)
-  password_hash String        @db.VarChar(255)
-  phone         String?       @db.VarChar(45)
+  first_name    String
+  last_name     String
+  email         String        @unique
+  password_hash String
+  token_version Int           @default(0)
+  phone         String?
   role_id       Int
-  status        AccountStatus @default(ACTIVE)
-  experience    String?       @db.Text
-  about_me      String?       @db.Text
+  status        String        @default("ACTIVE")
+  experience    String?
+  about_me      String?
   created_at    DateTime      @default(now())
   updated_at    DateTime      @updatedAt
 
@@ -63,14 +35,14 @@ model User {
 
   tutor_subjects            TutorSubject[]
   availability              Availability[]
-  lessons_as_tutor          Lesson[]           @relation("TutorLessons")
-  bookings_as_student       Booking[]          @relation("StudentBookings")
-  reviews_given             Review[]           @relation("StudentReviews")
-  reviews_received          Review[]           @relation("TutorReviews")
-  monthly_grades_received   MonthlyGrade[]     @relation("StudentGrades")
-  monthly_grades_given      MonthlyGrade[]     @relation("TutorGrades")
-  subject_requests_created  SubjectRequest[]   @relation("TutorRequests")
-  subject_requests_reviewed SubjectRequest[]   @relation("AdminReviewedRequests")
+  lessons_as_tutor          Lesson[]          @relation("TutorLessons")
+  bookings_as_student       Booking[]         @relation("StudentBookings")
+  reviews_given             Review[]          @relation("StudentReviews")
+  reviews_received          Review[]          @relation("TutorReviews")
+  monthly_grades_received   MonthlyGrade[]    @relation("StudentGrades")
+  monthly_grades_given      MonthlyGrade[]    @relation("TutorGrades")
+  subject_requests_created  SubjectRequest[]  @relation("TutorRequests")
+  subject_requests_reviewed SubjectRequest[]  @relation("AdminReviewedRequests")
   financial_reports         FinancialReport[]
 
   @@map("users")
@@ -78,9 +50,9 @@ model User {
 
 model Subject {
   id_subjects Int           @id @default(autoincrement())
-  name        String        @db.VarChar(100)
-  description String?       @db.Text
-  status      SubjectStatus @default(ACTIVE)
+  name        String
+  description String?
+  status      String        @default("ACTIVE")
   created_at  DateTime      @default(now())
 
   tutor_subjects   TutorSubject[]
@@ -95,9 +67,9 @@ model TutorSubject {
   id_tutor_subjects Int     @id @default(autoincrement())
   tutor_id          Int
   subject_id        Int
-  price_per_hour    Decimal @db.Decimal(10, 2)
+  price_per_hour    Float
   experience_years  Int?
-  description       String? @db.Text
+  description       String?
 
   tutor   User    @relation(fields: [tutor_id], references: [id_users], onDelete: Cascade)
   subject Subject @relation(fields: [subject_id], references: [id_subjects], onDelete: Cascade)
@@ -108,9 +80,9 @@ model TutorSubject {
 model Availability {
   id_availability Int     @id @default(autoincrement())
   tutor_id        Int
-  day_of_week     String  @db.VarChar(20)
-  start_time      String  @db.VarChar(10)
-  end_time        String  @db.VarChar(10)
+  day_of_week     String
+  start_time      String
+  end_time        String
   is_active       Boolean @default(true)
 
   tutor User @relation(fields: [tutor_id], references: [id_users], onDelete: Cascade)
@@ -122,13 +94,13 @@ model Lesson {
   id_lessons  Int          @id @default(autoincrement())
   tutor_id    Int
   subject_id  Int
-  lesson_date DateTime     @db.Date
-  start_time  String       @db.VarChar(10)
-  end_time    String       @db.VarChar(10)
-  status      LessonStatus @default(SCHEDULED)
+  lesson_date DateTime
+  start_time  String
+  end_time    String
+  status      String       @default("SCHEDULED")
   created_by  Int
-  homework    String?      @db.VarChar(255)
-  attention   String?      @db.VarChar(255)
+  homework    String?
+  attention   String?
   created_at  DateTime     @default(now())
   updated_at  DateTime     @updatedAt
 
@@ -146,8 +118,8 @@ model Booking {
   lesson_id    Int
   student_id   Int
   booking_date DateTime      @default(now())
-  status       BookingStatus @default(CONFIRMED)
-  note         String?       @db.Text
+  status       String        @default("CONFIRMED")
+  note         String?
 
   lesson  Lesson @relation(fields: [lesson_id], references: [id_lessons], onDelete: Cascade)
   student User   @relation("StudentBookings", fields: [student_id], references: [id_users])
@@ -175,7 +147,7 @@ model Review {
   tutor_id   Int
   lesson_id  Int?
   rating     Int
-  comment    String?  @db.Text
+  comment    String?
   created_at DateTime @default(now())
 
   student User    @relation("StudentReviews", fields: [student_id], references: [id_users])
@@ -193,8 +165,8 @@ model MonthlyGrade {
   subject_id        Int
   month             Int
   year              Int
-  grade             Decimal  @db.Decimal(4, 2)
-  comment           String?  @db.Text
+  grade             Float
+  comment           String?
   created_at        DateTime @default(now())
 
   student User    @relation("StudentGrades", fields: [student_id], references: [id_users])
@@ -207,9 +179,9 @@ model MonthlyGrade {
 model SubjectRequest {
   id_subject_requests Int           @id @default(autoincrement())
   tutor_id            Int
-  subject_name        String        @db.VarChar(100)
-  description         String?       @db.Text
-  status              RequestStatus @default(PENDING)
+  subject_name        String
+  description         String?
+  status              String        @default("PENDING")
   subject_id          Int?
   reviewed_by         Int?
   reviewed_at         DateTime?
@@ -227,9 +199,10 @@ model FinancialReport {
   month                Int
   year                 Int
   generated_by_user_id Int
-  total_student_cost   Decimal  @db.Decimal(12, 2)
-  total_tutor_salary   Decimal  @db.Decimal(12, 2)
-  file_path            String?  @db.VarChar(255)
+  total_student_cost   Float
+  total_tutor_salary   Float
+  file_path            String?
+  details              String   @default("[]")
   created_at           DateTime @default(now())
 
   generated_by User @relation(fields: [generated_by_user_id], references: [id_users])

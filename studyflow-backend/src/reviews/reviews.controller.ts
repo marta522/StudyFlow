@@ -19,17 +19,16 @@ interface AuthenticatedRequest {
   user: AuthenticatedUser;
 }
 
-@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('reviews')
 export class ReviewsController {
   constructor(private readonly reviewsService: ReviewsService) {}
 
-  @Roles('student', 'tutor', 'admin')
   @Get('tutor/:tutorId')
   getTutorReviews(@Param('tutorId', ParseIntPipe) tutorId: number) {
     return this.reviewsService.getTutorReviews(tutorId);
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('student')
   @Post()
   createReview(

@@ -1,6 +1,6 @@
 import axios from "axios";
 import { BookOpen, LogIn } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../api/axios";
 import type { User } from "../context/auth-context";
@@ -37,8 +37,15 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [logoutWarning] = useState<string | null>(() =>
+    sessionStorage.getItem("logoutWarning"),
+  );
   const { login } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (logoutWarning) sessionStorage.removeItem("logoutWarning");
+  }, [logoutWarning]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -86,6 +93,14 @@ export function LoginPage() {
             role="alert"
           >
             {error}
+          </div>
+        )}
+        {logoutWarning && (
+          <div
+            className="mt-6 rounded-lg border border-amber-500/50 bg-amber-500/10 p-3 text-center text-sm text-amber-200"
+            role="alert"
+          >
+            {logoutWarning}
           </div>
         )}
 

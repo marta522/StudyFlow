@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
@@ -7,15 +8,20 @@ import { AuthService } from './auth.service';
 describe('AuthService', () => {
   let service: AuthService;
   const prisma = {
+    role: {
+      findUnique: jest.fn(),
+    },
     user: {
       findUnique: jest.fn(),
       create: jest.fn(),
+      update: jest.fn(),
     },
   };
   const jwtService = { sign: jest.fn().mockReturnValue('signed-token') };
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    prisma.role.findUnique.mockResolvedValue({ id_roles: 2 });
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
@@ -47,7 +53,7 @@ describe('AuthService', () => {
       last_name: 'Lovelace',
       email: 'ada@example.com',
       password: 'secret1',
-      role_id: 2,
+      role: 'student',
     });
 
     expect(prisma.user.create).toHaveBeenCalledWith(
@@ -81,7 +87,7 @@ describe('AuthService', () => {
         last_name: 'Lovelace',
         email: 'ada@example.com',
         password: 'secret1',
-        role_id: 2,
+        role: 'student',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.user.create).not.toHaveBeenCalled();

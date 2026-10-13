@@ -11,6 +11,8 @@ import { CreateBookingDto } from './dto/create-booking.dto';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { SearchScheduleDto } from './dto/search-schedule.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
+import { CreateAdminLessonDto } from './dto/create-admin-lesson.dto';
+import { UpdateAdminLessonDto } from './dto/update-admin-lesson.dto';
 
 @Injectable()
 export class BookingsService {
@@ -43,6 +45,14 @@ export class BookingsService {
               'Możesz wystawić termin tylko dla aktywnego przedmiotu ze swojej oferty.',
             );
           }
+
+          await this.assertWithinTutorAvailability(
+            tx,
+            tutorId,
+            lessonDate,
+            dto.start_time,
+            dto.end_time,
+          );
 
           const overlappingLesson = await tx.lesson.findFirst({
             where: {
@@ -116,7 +126,9 @@ export class BookingsService {
             lessonDate < this.todayUtc() ||
             startTime >= endTime
           ) {
-            throw new BadRequestException('Podano nieprawidłowy termin lekcji.');
+            throw new BadRequestException(
+              'Podano nieprawidłowy termin lekcji.',
+            );
           }
 
           const offer = await tx.tutorSubject.findFirst({
@@ -132,6 +144,14 @@ export class BookingsService {
               'Przedmiot musi należeć do aktywnej oferty korepetytora.',
             );
           }
+
+          await this.assertWithinTutorAvailability(
+            tx,
+            tutorId,
+            lessonDate,
+            startTime,
+            endTime,
+          );
 
           const overlap = await tx.lesson.findFirst({
             where: {
@@ -209,6 +229,219 @@ export class BookingsService {
       }
       throw error;
     }
+  }
+
+  async createAdminLesson(adminId: number, dto: CreateAdminLessonDto) {
+    if (dto.start_time >= dto.end_time) {
+      throw new BadRequestException(
+        'Godzina zakończenia musi być późniejsza niż godzina rozpoczęcia.',
+      );
+    }
+    const lessonDate = new Date(`${dto.lesson_date}T00:00:00.000Z`);
+    if (Number.isNaN(lessonDate.getTime()) || lessonDate < this.todayUtc()) {
+      throw new BadRequestException(
+        'Termin lekcji musi przypadać na dzisiejszy dzień lub później.',
+      );
+    }
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        const tutor = await tx.user.findFirst({
+          where: {
+            id_users: dto.tutor_id,
+            status: 'ACTIVE',
+            role: { name: 'tutor' },
+          },
+          select: { id_users: true },
+        });
+        if (!tutor) {
+          throw new NotFoundException(
+            'Aktywny korepetytor nie został znaleziony.',
+          );
+        }
+        if (dto.student_id) {
+          const student = await tx.user.findFirst({
+            where: {
+              id_users: dto.student_id,
+              status: 'ACTIVE',
+              role: { name: 'student' },
+            },
+            select: { id_users: true },
+          });
+          if (!student) {
+            throw new NotFoundException('Aktywny uczeń nie został znaleziony.');
+          }
+        }
+        const offer = await tx.tutorSubject.findFirst({
+          where: {
+            tutor_id: dto.tutor_id,
+            subject_id: dto.subject_id,
+            subject: { status: 'ACTIVE' },
+          },
+          select: { id_tutor_subjects: true },
+        });
+        if (!offer) {
+          throw new BadRequestException(
+            'Przedmiot musi należeć do aktywnej oferty korepetytora.',
+          );
+        }
+        await this.assertWithinTutorAvailability(
+          tx,
+          dto.tutor_id,
+          lessonDate,
+          dto.start_time,
+          dto.end_time,
+        );
+        await this.assertNoOverlappingLesson(
+          tx,
+          dto.tutor_id,
+          lessonDate,
+          dto.start_time,
+          dto.end_time,
+        );
+
+        return tx.lesson.create({
+          data: {
+            tutor_id: dto.tutor_id,
+            subject_id: dto.subject_id,
+            lesson_date: lessonDate,
+            start_time: dto.start_time,
+            end_time: dto.end_time,
+            created_by: adminId,
+            homework: dto.homework,
+            ...(dto.student_id && {
+              bookings: { create: { student_id: dto.student_id } },
+            }),
+          },
+          include: {
+            tutor: {
+              select: { id_users: true, first_name: true, last_name: true },
+            },
+            subject: { select: { id_subjects: true, name: true } },
+            bookings: {
+              include: {
+                student: {
+                  select: { id_users: true, first_name: true, last_name: true },
+                },
+              },
+            },
+          },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+  }
+
+  async updateAdminLesson(lessonId: number, dto: UpdateAdminLessonDto) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const lesson = await tx.lesson.findUnique({
+          where: { id_lessons: lessonId },
+          include: { bookings: true },
+        });
+        if (!lesson) {
+          throw new NotFoundException('Termin nie został znaleziony.');
+        }
+        if (lesson.status !== 'SCHEDULED' || lesson.bookings.length > 0) {
+          throw new ConflictException(
+            'Można edytować tylko wolne, zaplanowane terminy.',
+          );
+        }
+        const tutorId = dto.tutor_id ?? lesson.tutor_id;
+        const subjectId = dto.subject_id ?? lesson.subject_id;
+        const dateText =
+          dto.lesson_date ?? lesson.lesson_date.toISOString().slice(0, 10);
+        const lessonDate = new Date(`${dateText}T00:00:00.000Z`);
+        const startTime = dto.start_time ?? lesson.start_time;
+        const endTime = dto.end_time ?? lesson.end_time;
+        if (
+          Number.isNaN(lessonDate.getTime()) ||
+          lessonDate < this.todayUtc() ||
+          startTime >= endTime
+        ) {
+          throw new BadRequestException('Podano nieprawidłowy termin lekcji.');
+        }
+        const tutor = await tx.user.findFirst({
+          where: {
+            id_users: tutorId,
+            status: 'ACTIVE',
+            role: { name: 'tutor' },
+          },
+          select: { id_users: true },
+        });
+        if (!tutor) {
+          throw new NotFoundException(
+            'Aktywny korepetytor nie został znaleziony.',
+          );
+        }
+        const offer = await tx.tutorSubject.findFirst({
+          where: {
+            tutor_id: tutorId,
+            subject_id: subjectId,
+            subject: { status: 'ACTIVE' },
+          },
+          select: { id_tutor_subjects: true },
+        });
+        if (!offer) {
+          throw new BadRequestException(
+            'Przedmiot musi należeć do aktywnej oferty korepetytora.',
+          );
+        }
+        await this.assertWithinTutorAvailability(
+          tx,
+          tutorId,
+          lessonDate,
+          startTime,
+          endTime,
+        );
+        await this.assertNoOverlappingLesson(
+          tx,
+          tutorId,
+          lessonDate,
+          startTime,
+          endTime,
+          lessonId,
+        );
+        return tx.lesson.update({
+          where: { id_lessons: lessonId },
+          data: {
+            tutor_id: tutorId,
+            subject_id: subjectId,
+            lesson_date: lessonDate,
+            start_time: startTime,
+            end_time: endTime,
+            ...(dto.homework !== undefined && { homework: dto.homework }),
+          },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+  }
+
+  async cancelAdminLesson(lessonId: number) {
+    return this.prisma.$transaction(async (tx) => {
+      const lesson = await tx.lesson.findUnique({
+        where: { id_lessons: lessonId },
+        select: { id_lessons: true, status: true },
+      });
+      if (!lesson) {
+        throw new NotFoundException('Termin nie został znaleziony.');
+      }
+      if (lesson.status === 'COMPLETED') {
+        throw new ConflictException('Nie można anulować ukończonej lekcji.');
+      }
+      const [updatedLesson, bookings] = await Promise.all([
+        tx.lesson.update({
+          where: { id_lessons: lessonId },
+          data: { status: 'CANCELLED' },
+        }),
+        tx.booking.updateMany({
+          where: { lesson_id: lessonId, status: { not: 'CANCELLED' } },
+          data: { status: 'CANCELLED' },
+        }),
+      ]);
+      return { lesson: updatedLesson, cancelledBookings: bookings.count };
+    });
   }
 
   async getAvailableLessons() {
@@ -384,9 +617,9 @@ export class BookingsService {
             {
               tutor: {
                 OR: [
-                  { first_name: { contains: userSearch, mode: 'insensitive' } },
-                  { last_name: { contains: userSearch, mode: 'insensitive' } },
-                  { email: { contains: userSearch, mode: 'insensitive' } },
+                  { first_name: { contains: userSearch } },
+                  { last_name: { contains: userSearch } },
+                  { email: { contains: userSearch } },
                 ],
               },
             },
@@ -399,19 +632,16 @@ export class BookingsService {
                       {
                         first_name: {
                           contains: userSearch,
-                          mode: 'insensitive',
                         },
                       },
                       {
                         last_name: {
                           contains: userSearch,
-                          mode: 'insensitive',
                         },
                       },
                       {
                         email: {
                           contains: userSearch,
-                          mode: 'insensitive',
                         },
                       },
                     ],
@@ -456,5 +686,67 @@ export class BookingsService {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
     return today;
+  }
+
+  private async assertWithinTutorAvailability(
+    tx: Prisma.TransactionClient,
+    tutorId: number,
+    lessonDate: Date,
+    startTime: string,
+    endTime: string,
+  ) {
+    const dayByNumber = [
+      'Niedziela',
+      'Poniedziałek',
+      'Wtorek',
+      'Środa',
+      'Czwartek',
+      'Piątek',
+      'Sobota',
+    ];
+    const dayOfWeek = dayByNumber[lessonDate.getUTCDay()];
+    const availability = await tx.availability.findFirst({
+      where: {
+        tutor_id: tutorId,
+        day_of_week: dayOfWeek,
+        is_active: true,
+        start_time: { lte: startTime },
+        end_time: { gte: endTime },
+      },
+      select: { id_availability: true },
+    });
+    if (!availability) {
+      throw new BadRequestException(
+        'Termin lekcji musi mieścić się w zdefiniowanej dostępności korepetytora.',
+      );
+    }
+  }
+
+  private async assertNoOverlappingLesson(
+    tx: Prisma.TransactionClient,
+    tutorId: number,
+    lessonDate: Date,
+    startTime: string,
+    endTime: string,
+    excludedLessonId?: number,
+  ) {
+    const overlap = await tx.lesson.findFirst({
+      where: {
+        tutor_id: tutorId,
+        lesson_date: lessonDate,
+        status: 'SCHEDULED',
+        start_time: { lt: endTime },
+        end_time: { gt: startTime },
+        ...(excludedLessonId !== undefined && {
+          id_lessons: { not: excludedLessonId },
+        }),
+      },
+      select: { id_lessons: true },
+    });
+    if (overlap) {
+      throw new ConflictException(
+        'Ten termin koliduje z inną zaplanowaną lekcją.',
+      );
+    }
   }
 }

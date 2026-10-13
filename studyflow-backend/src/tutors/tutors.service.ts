@@ -45,8 +45,8 @@ export class TutorsService {
       },
       ...(query.q && {
         OR: [
-          { first_name: { contains: query.q, mode: 'insensitive' } },
-          { last_name: { contains: query.q, mode: 'insensitive' } },
+          { first_name: { contains: query.q } },
+          { last_name: { contains: query.q } },
         ],
       }),
       ...(query.available_date && {
@@ -170,6 +170,7 @@ export class TutorsService {
         experience: true,
         created_at: true,
         tutor_subjects: {
+          where: { subject: { status: 'ACTIVE' } },
           include: { subject: { select: { id_subjects: true, name: true } } },
         },
         reviews_received: { select: { rating: true } },
@@ -312,6 +313,7 @@ export class TutorsService {
         tutor_id: tutorId,
         status: 'SCHEDULED',
         lesson_date: { gte: this.todayUtc() },
+        subject: { status: 'ACTIVE' },
         bookings: { none: { status: { not: 'CANCELLED' } } },
       },
       select: {
