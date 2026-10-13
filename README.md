@@ -100,3 +100,11 @@ Otwórz nowe okno terminala i, z katalogu głównego repozytorium, wykonaj:
 | 👑 Administrator | `admin@studyflow.pl` | `haslo123` |
 | 🎓 Korepetytor | `tutor@studyflow.pl` | `haslo123` |
 | 📚 Uczeń | `student@studyflow.pl` | `haslo123` |
+
+## 🌿 Wprowadzanie zmian
+
+Jeśli chcesz wprowadzać zmiany w projekcie, utwórz osobny branch zamiast pracować bezpośrednio na głównej gałęzi:
+
+```bash
+git switch -c nazwa-twojego-brancha
+```
