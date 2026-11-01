@@ -2,8 +2,10 @@ import { Type } from 'class-transformer';
 import {
   IsDateString,
   IsInt,
+  IsIn,
   IsOptional,
   IsString,
+  MaxLength,
   Matches,
   Min,
   MinLength,
@@ -27,7 +29,25 @@ export class SearchScheduleDto {
   subject_id?: number;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  tutor_id?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  student_id?: number;
+
+  @IsOptional()
   @IsString()
   @MinLength(2)
+  @MaxLength(100)
   user?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['SCHEDULED', 'COMPLETED', 'CANCELLED'])
+  status?: string;
 }

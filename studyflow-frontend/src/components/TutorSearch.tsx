@@ -53,6 +53,8 @@ export function TutorSearch({ onSelectTutor }: TutorSearchProps) {
   const [maxPrice, setMaxPrice] = useState("");
   const [minRating, setMinRating] = useState("");
   const [availableDate, setAvailableDate] = useState("");
+  const [availableFrom, setAvailableFrom] = useState("");
+  const [availableTo, setAvailableTo] = useState("");
   const [todayDate, setTodayDate] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +99,22 @@ export function TutorSearch({ onSelectTutor }: TutorSearchProps) {
 
   function handleSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (
+      minPrice &&
+      maxPrice &&
+      Number(minPrice) > Number(maxPrice)
+    ) {
+      setError("Cena minimalna nie może być wyższa od maksymalnej.");
+      return;
+    }
+    if (
+      availableFrom &&
+      availableTo &&
+      availableFrom >= availableTo
+    ) {
+      setError("Godzina początkowa musi być wcześniejsza od końcowej.");
+      return;
+    }
     const params: Record<string, string> = {};
     if (query.trim()) params.q = query.trim();
     if (subjectId) params.subject_id = subjectId;
@@ -104,6 +122,8 @@ export function TutorSearch({ onSelectTutor }: TutorSearchProps) {
     if (maxPrice) params.max_price = maxPrice;
     if (minRating) params.min_rating = minRating;
     if (availableDate) params.available_date = availableDate;
+    if (availableFrom) params.available_from = availableFrom;
+    if (availableTo) params.available_to = availableTo;
     void search(params);
   }
 
@@ -132,6 +152,7 @@ export function TutorSearch({ onSelectTutor }: TutorSearchProps) {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             minLength={2}
+            maxLength={100}
             placeholder="np. Anna"
             className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2 text-white"
           />
@@ -156,6 +177,7 @@ export function TutorSearch({ onSelectTutor }: TutorSearchProps) {
           <input
             type="number"
             min="0"
+            max={maxPrice || undefined}
             step="0.01"
             value={minPrice}
             onChange={(event) => setMinPrice(event.target.value)}
@@ -166,7 +188,7 @@ export function TutorSearch({ onSelectTutor }: TutorSearchProps) {
           Cena maksymalna (zł / godz.)
           <input
             type="number"
-            min="0"
+            min={minPrice || "0"}
             step="0.01"
             value={maxPrice}
             onChange={(event) => setMaxPrice(event.target.value)}
@@ -197,10 +219,44 @@ export function TutorSearch({ onSelectTutor }: TutorSearchProps) {
               setTodayDate(new Date().toISOString().slice(0, 10))
             }
             value={availableDate}
-            onChange={(event) => setAvailableDate(event.target.value)}
+            onChange={(event) => {
+              setAvailableDate(event.target.value);
+              if (!event.target.value) {
+                setAvailableFrom("");
+                setAvailableTo("");
+              }
+            }}
             className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2 text-white"
           />
         </label>
+        <label className="space-y-2 text-sm text-brand-textMuted">
+          Dostępność od
+          <input
+            type="time"
+            value={availableFrom}
+            onChange={(event) => setAvailableFrom(event.target.value)}
+            max={availableTo || undefined}
+            disabled={!availableDate}
+            required={Boolean(availableTo)}
+            className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2 text-white disabled:opacity-50"
+          />
+        </label>
+        <label className="space-y-2 text-sm text-brand-textMuted">
+          Dostępność do
+          <input
+            type="time"
+            value={availableTo}
+            onChange={(event) => setAvailableTo(event.target.value)}
+            min={availableFrom || undefined}
+            disabled={!availableDate}
+            required={Boolean(availableFrom)}
+            className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2 text-white disabled:opacity-50"
+          />
+        </label>
+        <p className="text-xs text-brand-textMuted sm:col-span-2 xl:col-span-3">
+          Podaj obie godziny i dzień, aby znaleźć wolne lekcje mieszczące się w
+          wybranym przedziale.
+        </p>
         <button
           type="submit"
           disabled={loading}

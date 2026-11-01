@@ -76,16 +76,24 @@ export class BookingsController {
   @Roles('admin')
   @Patch('admin/lessons/:id')
   updateAdminLesson(
+    @Req() request: AuthenticatedRequest,
     @Param('id', ParseIntPipe) lessonId: number,
     @Body() dto: UpdateAdminLessonDto,
   ) {
-    return this.bookingsService.updateAdminLesson(lessonId, dto);
+    return this.bookingsService.updateAdminLesson(
+      request.user.id,
+      lessonId,
+      dto,
+    );
   }
 
   @Roles('admin')
   @Delete('admin/lessons/:id')
-  cancelAdminLesson(@Param('id', ParseIntPipe) lessonId: number) {
-    return this.bookingsService.cancelAdminLesson(lessonId);
+  cancelAdminLesson(
+    @Param('id', ParseIntPipe) lessonId: number,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.bookingsService.cancelAdminLesson(lessonId, request.user.id);
   }
 
   @Roles('student', 'tutor', 'admin')

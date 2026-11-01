@@ -46,6 +46,31 @@ export class BookingsService {
             );
           }
 
+          if (dto.student_id !== undefined) {
+            const student = await tx.user.findFirst({
+              where: {
+                id_users: dto.student_id,
+                status: 'ACTIVE',
+                role: { name: 'student' },
+                bookings_as_student: {
+                  some: {
+                    status: { not: 'CANCELLED' },
+                    lesson: {
+                      tutor_id: tutorId,
+                      status: { not: 'CANCELLED' },
+                    },
+                  },
+                },
+              },
+              select: { id_users: true },
+            });
+            if (!student) {
+              throw new BadRequestException(
+                'Możesz przypisać lekcję tylko aktywnemu uczniowi, który ma już rezerwację u Ciebie.',
+              );
+            }
+          }
+
           await this.assertWithinTutorAvailability(
             tx,
             tutorId,
@@ -70,7 +95,7 @@ export class BookingsService {
             );
           }
 
-          return tx.lesson.create({
+          const lesson = await tx.lesson.create({
             data: {
               tutor_id: tutorId,
               subject_id: dto.subject_id,
@@ -79,8 +104,52 @@ export class BookingsService {
               end_time: dto.end_time,
               created_by: tutorId,
               homework: dto.homework,
+              ...(dto.student_id !== undefined && {
+                bookings: { create: { student_id: dto.student_id } },
+              }),
+            },
+            include: {
+              tutor: {
+                select: { id_users: true, first_name: true, last_name: true },
+              },
+              subject: { select: { name: true } },
+              bookings: {
+                select: { student_id: true },
+              },
             },
           });
+          const notificationUserIds = new Set([
+            tutorId,
+            ...lesson.bookings.map((booking) => booking.student_id),
+          ]);
+          await Promise.all(
+            [...notificationUserIds].map((userId) =>
+              tx.notification.create({
+                data: {
+                  user_id: userId,
+                  title: 'Dodano lekcję do harmonogramu',
+                  message: `Dodano lekcję ${lesson.subject.name} ${lesson.lesson_date.toISOString().slice(0, 10)} (${lesson.start_time}–${lesson.end_time}).`,
+                  type: 'LESSON_CREATED',
+                },
+              }),
+            ),
+          );
+          await tx.adminAuditLog.create({
+            data: {
+              actor_id: tutorId,
+              action: 'LESSON_CREATED',
+              entity_type: 'lesson',
+              entity_id: lesson.id_lessons,
+              details: JSON.stringify({
+                tutorId: lesson.tutor_id,
+                subjectId: lesson.subject_id,
+                lessonDate: lesson.lesson_date.toISOString().slice(0, 10),
+                startTime: lesson.start_time,
+                endTime: lesson.end_time,
+              }),
+            },
+          });
+          return lesson;
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );
@@ -103,14 +172,20 @@ export class BookingsService {
         async (tx) => {
           const lesson = await tx.lesson.findUnique({
             where: { id_lessons: lessonId },
-            include: { bookings: true },
+            include: {
+              subject: { select: { name: true } },
+              bookings: {
+                where: { status: { not: 'CANCELLED' } },
+                select: { student_id: true },
+              },
+            },
           });
           if (!lesson || lesson.tutor_id !== tutorId) {
             throw new NotFoundException('Termin nie został znaleziony.');
           }
-          if (lesson.status !== 'SCHEDULED' || lesson.bookings.length > 0) {
+          if (lesson.status !== 'SCHEDULED') {
             throw new ConflictException(
-              'Można edytować tylko wolne, zaplanowane terminy.',
+              'Można edytować tylko zaplanowane lekcje.',
             );
           }
 
@@ -170,7 +245,7 @@ export class BookingsService {
             );
           }
 
-          return tx.lesson.update({
+          const updatedLesson = await tx.lesson.update({
             where: { id_lessons: lessonId },
             data: {
               subject_id: subjectId,
@@ -180,6 +255,31 @@ export class BookingsService {
               ...(dto.homework !== undefined && { homework: dto.homework }),
             },
           });
+          await tx.adminAuditLog.create({
+            data: {
+              actor_id: tutorId,
+              action: 'LESSON_UPDATED',
+              entity_type: 'lesson',
+              entity_id: lessonId,
+              details: JSON.stringify({
+                previous: {
+                  subjectId: lesson.subject_id,
+                  lessonDate: lesson.lesson_date.toISOString().slice(0, 10),
+                  startTime: lesson.start_time,
+                  endTime: lesson.end_time,
+                },
+                current: {
+                  subjectId,
+                  lessonDate: updatedLesson.lesson_date
+                    .toISOString()
+                    .slice(0, 10),
+                  startTime,
+                  endTime,
+                },
+              }),
+            },
+          });
+          return updatedLesson;
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );
@@ -202,7 +302,13 @@ export class BookingsService {
         async (tx) => {
           const lesson = await tx.lesson.findUnique({
             where: { id_lessons: lessonId },
-            include: { bookings: true },
+            include: {
+              subject: { select: { name: true } },
+              bookings: {
+                where: { status: { not: 'CANCELLED' } },
+                select: { student_id: true },
+              },
+            },
           });
           if (!lesson || lesson.tutor_id !== tutorId) {
             throw new NotFoundException('Termin nie został znaleziony.');
@@ -213,6 +319,20 @@ export class BookingsService {
             );
           }
 
+          await tx.adminAuditLog.create({
+            data: {
+              actor_id: tutorId,
+              action: 'LESSON_DELETED',
+              entity_type: 'lesson',
+              entity_id: lessonId,
+              details: JSON.stringify({
+                subject: lesson.subject.name,
+                lessonDate: lesson.lesson_date.toISOString().slice(0, 10),
+                startTime: lesson.start_time,
+                endTime: lesson.end_time,
+              }),
+            },
+          });
           await tx.lesson.delete({ where: { id_lessons: lessonId } });
           return { id_lessons: lessonId };
         },
@@ -300,7 +420,7 @@ export class BookingsService {
           dto.end_time,
         );
 
-        return tx.lesson.create({
+        const lesson = await tx.lesson.create({
           data: {
             tutor_id: dto.tutor_id,
             subject_id: dto.subject_id,
@@ -327,24 +447,66 @@ export class BookingsService {
             },
           },
         });
+        const notificationUserIds = new Set([
+          lesson.tutor.id_users,
+          ...lesson.bookings.map((booking) => booking.student.id_users),
+        ]);
+        await Promise.all(
+          [...notificationUserIds].map((userId) =>
+            tx.notification.create({
+              data: {
+                user_id: userId,
+                title: 'Dodano lekcję do harmonogramu',
+                message: `Dodano lekcję ${lesson.subject.name} ${lesson.lesson_date.toISOString().slice(0, 10)} (${lesson.start_time}–${lesson.end_time}).`,
+                type: 'LESSON_CREATED',
+              },
+            }),
+          ),
+        );
+        await tx.adminAuditLog.create({
+          data: {
+            actor_id: adminId,
+            action: 'LESSON_CREATED',
+            entity_type: 'lesson',
+            entity_id: lesson.id_lessons,
+            details: JSON.stringify({
+              tutorId: lesson.tutor_id,
+              subjectId: lesson.subject_id,
+              lessonDate: lesson.lesson_date.toISOString().slice(0, 10),
+              startTime: lesson.start_time,
+              endTime: lesson.end_time,
+            }),
+          },
+        });
+        return lesson;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
   }
 
-  async updateAdminLesson(lessonId: number, dto: UpdateAdminLessonDto) {
+  async updateAdminLesson(
+    adminId: number,
+    lessonId: number,
+    dto: UpdateAdminLessonDto,
+  ) {
     return this.prisma.$transaction(
       async (tx) => {
         const lesson = await tx.lesson.findUnique({
           where: { id_lessons: lessonId },
-          include: { bookings: true },
+          include: {
+            subject: { select: { name: true } },
+            bookings: {
+              where: { status: { not: 'CANCELLED' } },
+              select: { student_id: true },
+            },
+          },
         });
         if (!lesson) {
           throw new NotFoundException('Termin nie został znaleziony.');
         }
-        if (lesson.status !== 'SCHEDULED' || lesson.bookings.length > 0) {
+        if (lesson.status !== 'SCHEDULED') {
           throw new ConflictException(
-            'Można edytować tylko wolne, zaplanowane terminy.',
+            'Można edytować tylko zaplanowane lekcje.',
           );
         }
         const tutorId = dto.tutor_id ?? lesson.tutor_id;
@@ -402,7 +564,7 @@ export class BookingsService {
           endTime,
           lessonId,
         );
-        return tx.lesson.update({
+        const updatedLesson = await tx.lesson.update({
           where: { id_lessons: lessonId },
           data: {
             tutor_id: tutorId,
@@ -413,16 +575,83 @@ export class BookingsService {
             ...(dto.homework !== undefined && { homework: dto.homework }),
           },
         });
+        const changed = [
+          lesson.tutor_id !== tutorId,
+          lesson.subject_id !== subjectId,
+          lessonDate.getTime() !== lesson.lesson_date.getTime(),
+          startTime !== lesson.start_time,
+          endTime !== lesson.end_time,
+        ].some(Boolean);
+        if (changed) {
+          const notificationUserIds = new Set([
+            lesson.tutor_id,
+            tutorId,
+            ...lesson.bookings.map((booking) => booking.student_id),
+          ]);
+          const changes: string[] = [];
+          if (lesson.tutor_id !== tutorId) changes.push('korepetytor');
+          if (lesson.subject_id !== subjectId) changes.push('przedmiot');
+          if (lessonDate.getTime() !== lesson.lesson_date.getTime())
+            changes.push('data');
+          if (startTime !== lesson.start_time || endTime !== lesson.end_time)
+            changes.push('godzina');
+          await Promise.all(
+            [...notificationUserIds].map((userId) =>
+              tx.notification.create({
+                data: {
+                  user_id: userId,
+                  title: 'Zmieniono termin lekcji',
+                  message: `Administrator zmienił ${changes.join(', ')} lekcji ${lesson.subject.name}. Nowy termin: ${updatedLesson.lesson_date.toISOString().slice(0, 10)} (${updatedLesson.start_time}–${updatedLesson.end_time}).`,
+                  type: 'LESSON_UPDATED',
+                },
+              }),
+            ),
+          );
+          await tx.adminAuditLog.create({
+            data: {
+              actor_id: adminId,
+              action: 'LESSON_UPDATED',
+              entity_type: 'lesson',
+              entity_id: lessonId,
+              details: JSON.stringify({
+                previous: {
+                  tutorId: lesson.tutor_id,
+                  subjectId: lesson.subject_id,
+                  lessonDate: lesson.lesson_date.toISOString().slice(0, 10),
+                  startTime: lesson.start_time,
+                  endTime: lesson.end_time,
+                },
+                current: {
+                  tutorId,
+                  subjectId,
+                  lessonDate: updatedLesson.lesson_date
+                    .toISOString()
+                    .slice(0, 10),
+                  startTime,
+                  endTime,
+                },
+              }),
+            },
+          });
+        }
+        return updatedLesson;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
   }
 
-  async cancelAdminLesson(lessonId: number) {
+  async cancelAdminLesson(lessonId: number, adminId: number) {
     return this.prisma.$transaction(async (tx) => {
       const lesson = await tx.lesson.findUnique({
         where: { id_lessons: lessonId },
-        select: { id_lessons: true, status: true },
+        include: {
+          subject: { select: { name: true } },
+          tutor: { select: { id_users: true } },
+          bookings: {
+            where: { status: { not: 'CANCELLED' } },
+            select: { student_id: true },
+          },
+        },
       });
       if (!lesson) {
         throw new NotFoundException('Termin nie został znaleziony.');
@@ -430,16 +659,87 @@ export class BookingsService {
       if (lesson.status === 'COMPLETED') {
         throw new ConflictException('Nie można anulować ukończonej lekcji.');
       }
+      if (lesson.status === 'CANCELLED') {
+        throw new ConflictException('Ta lekcja została już odwołana.');
+      }
       const [updatedLesson, bookings] = await Promise.all([
         tx.lesson.update({
           where: { id_lessons: lessonId },
-          data: { status: 'CANCELLED' },
+          data: {
+            status: 'CANCELLED',
+            cancelled_by: adminId,
+            cancelled_at: new Date(),
+          },
         }),
         tx.booking.updateMany({
           where: { lesson_id: lessonId, status: { not: 'CANCELLED' } },
           data: { status: 'CANCELLED' },
         }),
       ]);
+      const notificationUserIds = new Set([
+        lesson.tutor.id_users,
+        ...lesson.bookings.map((booking) => booking.student_id),
+      ]);
+      await Promise.all(
+        [...notificationUserIds].map((userId) =>
+          tx.notification.create({
+            data: {
+              user_id: userId,
+              title: 'Lekcja została odwołana',
+              message: `Lekcja ${lesson.subject.name} ${lesson.lesson_date.toISOString().slice(0, 10)} (${lesson.start_time}–${lesson.end_time}) została odwołana przez administratora.`,
+              type: 'LESSON_CANCELLED',
+            },
+          }),
+        ),
+      );
+      await tx.adminAuditLog.create({
+        data: {
+          actor_id: adminId,
+          action: 'LESSON_CANCELLED',
+          entity_type: 'lesson',
+          entity_id: lessonId,
+          details: JSON.stringify({
+            subject: lesson.subject.name,
+            lessonDate: lesson.lesson_date.toISOString().slice(0, 10),
+            startTime: lesson.start_time,
+            endTime: lesson.end_time,
+          }),
+        },
+      });
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const recentCancellationCount = await tx.lesson.count({
+        where: {
+          status: 'CANCELLED',
+          cancelled_at: { gte: sevenDaysAgo },
+        },
+      });
+      if (recentCancellationCount >= 5) {
+        const admins = await tx.user.findMany({
+          where: { role: { name: 'admin' }, status: 'ACTIVE' },
+          select: { id_users: true },
+        });
+        await Promise.all(
+          admins.map(async (admin) => {
+            const recentAlert = await tx.notification.findFirst({
+              where: {
+                user_id: admin.id_users,
+                type: 'ADMIN_CANCELLATION_SPIKE',
+                created_at: { gte: sevenDaysAgo },
+              },
+              select: { id_notifications: true },
+            });
+            if (recentAlert) return;
+            await tx.notification.create({
+              data: {
+                user_id: admin.id_users,
+                title: 'Wzrost liczby odwołanych lekcji',
+                message: `W ciągu ostatnich 7 dni odwołano ${recentCancellationCount} lub więcej lekcji. Sprawdź harmonogram i ustal, czy potrzebna jest reakcja.`,
+                type: 'ADMIN_CANCELLATION_SPIKE',
+              },
+            });
+          }),
+        );
+      }
       return { lesson: updatedLesson, cancelledBookings: bookings.count };
     });
   }
@@ -503,7 +803,7 @@ export class BookingsService {
             );
           }
 
-          return tx.booking.create({
+          const booking = await tx.booking.create({
             data: {
               lesson_id: dto.lesson_id,
               student_id: studentId,
@@ -518,6 +818,15 @@ export class BookingsService {
               },
             },
           });
+          await tx.notification.create({
+            data: {
+              user_id: lesson.tutor_id,
+              title: 'Nowa rezerwacja lekcji',
+              message: `Uczeń zarezerwował lekcję ${booking.lesson.subject.name} ${booking.lesson.lesson_date.toISOString().slice(0, 10)} (${booking.lesson.start_time}–${booking.lesson.end_time}).`,
+              type: 'LESSON_BOOKED',
+            },
+          });
+          return booking;
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );
@@ -550,6 +859,9 @@ export class BookingsService {
                   email: true,
                 },
               },
+              cancelled_by_user: {
+                select: { first_name: true, last_name: true },
+              },
             },
           },
         },
@@ -562,9 +874,31 @@ export class BookingsService {
         where: { lesson: { tutor_id: userId } },
         include: {
           student: {
-            select: { first_name: true, last_name: true, email: true },
+            select: {
+              id_users: true,
+              first_name: true,
+              last_name: true,
+              email: true,
+            },
           },
-          lesson: { include: { subject: true } },
+          lesson: {
+            include: {
+              subject: true,
+              cancelled_by_user: {
+                select: { first_name: true, last_name: true },
+              },
+              tutor: {
+                select: { id_users: true, first_name: true, last_name: true },
+              },
+              monthly_grades: {
+                select: {
+                  id_monthly_grades: true,
+                  student_id: true,
+                },
+              },
+            },
+          },
+          attendance: true,
         },
         orderBy: { lesson: { lesson_date: 'asc' } },
       });
@@ -578,6 +912,9 @@ export class BookingsService {
             include: {
               subject: true,
               tutor: { select: { first_name: true, last_name: true } },
+              cancelled_by_user: {
+                select: { first_name: true, last_name: true },
+              },
             },
           },
         },
@@ -598,6 +935,7 @@ export class BookingsService {
     const userSearch = query.user?.trim();
     return this.prisma.lesson.findMany({
       where: {
+        ...(query.status && { status: query.status }),
         ...(query.from && {
           lesson_date: { gte: new Date(`${query.from}T00:00:00.000Z`) },
         }),
@@ -611,6 +949,15 @@ export class BookingsService {
         }),
         ...(query.subject_id !== undefined && {
           subject_id: query.subject_id,
+        }),
+        ...(query.tutor_id !== undefined && { tutor_id: query.tutor_id }),
+        ...(query.student_id !== undefined && {
+          bookings: {
+            some: {
+              student_id: query.student_id,
+              status: { not: 'CANCELLED' },
+            },
+          },
         }),
         ...(userSearch && {
           OR: [
@@ -626,7 +973,6 @@ export class BookingsService {
             {
               bookings: {
                 some: {
-                  status: { not: 'CANCELLED' },
                   student: {
                     OR: [
                       {
@@ -662,8 +1008,10 @@ export class BookingsService {
           },
         },
         subject: { select: { id_subjects: true, name: true } },
+        cancelled_by_user: {
+          select: { first_name: true, last_name: true },
+        },
         bookings: {
-          where: { status: { not: 'CANCELLED' } },
           select: {
             id_bookings: true,
             status: true,

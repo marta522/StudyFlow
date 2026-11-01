@@ -3,6 +3,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -21,6 +22,7 @@ export class CreateReviewDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
+  @Matches(/\S/)
   @MaxLength(5000)
   comment?: string;
 }

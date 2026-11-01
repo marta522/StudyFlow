@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   InternalServerErrorException,
@@ -11,6 +12,7 @@ import { CreateManagedUserDto } from './dto/create-managed-user.dto';
 import { GenerateFinancialReportDto } from './dto/generate-financial-report.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
+import { SearchAuditLogDto } from './dto/search-audit-log.dto';
 
 @Injectable()
 export class UsersService {
@@ -68,7 +70,7 @@ export class UsersService {
     });
   }
 
-  async createManagedUser(dto: CreateManagedUserDto) {
+  async createManagedUser(adminId: number, dto: CreateManagedUserDto) {
     const role = await this.prisma.role.findUnique({
       where: { name: dto.role },
       select: { id_roles: true },
@@ -78,24 +80,37 @@ export class UsersService {
     }
 
     try {
-      return await this.prisma.user.create({
-        data: {
-          first_name: dto.first_name.trim(),
-          last_name: dto.last_name.trim(),
-          email: dto.email.trim().toLowerCase(),
-          password_hash: await bcrypt.hash(dto.password, 10),
-          phone: dto.phone?.trim() || null,
-          role_id: role.id_roles,
-        },
-        select: {
-          id_users: true,
-          first_name: true,
-          last_name: true,
-          email: true,
-          phone: true,
-          status: true,
-          role: { select: { name: true } },
-        },
+      const passwordHash = await bcrypt.hash(dto.password, 10);
+      return await this.prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({
+          data: {
+            first_name: dto.first_name.trim(),
+            last_name: dto.last_name.trim(),
+            email: dto.email.trim().toLowerCase(),
+            password_hash: passwordHash,
+            phone: dto.phone?.trim() || null,
+            role_id: role.id_roles,
+          },
+          select: {
+            id_users: true,
+            first_name: true,
+            last_name: true,
+            email: true,
+            phone: true,
+            status: true,
+            role: { select: { name: true } },
+          },
+        });
+        await tx.adminAuditLog.create({
+          data: {
+            actor_id: adminId,
+            action: 'USER_CREATED',
+            entity_type: 'user',
+            entity_id: user.id_users,
+            details: JSON.stringify({ email: user.email, role: dto.role }),
+          },
+        });
+        return user;
       });
     } catch (error) {
       if (
@@ -113,14 +128,27 @@ export class UsersService {
   async getDashboardMetrics() {
     const [
       studentCount,
+      activeStudentCount,
       tutorCount,
+      activeTutorCount,
       reviewStats,
       pendingRequests,
       lessons,
       rates,
+      cancelledLessonCount,
+      upcomingLessons,
+      pendingRequestItems,
+      recentlyCancelledLessons,
+      tutorAvailability,
     ] = await Promise.all([
       this.prisma.user.count({ where: { role: { name: 'student' } } }),
+      this.prisma.user.count({
+        where: { role: { name: 'student' }, status: 'ACTIVE' },
+      }),
       this.prisma.user.count({ where: { role: { name: 'tutor' } } }),
+      this.prisma.user.count({
+        where: { role: { name: 'tutor' }, status: 'ACTIVE' },
+      }),
       this.prisma.review.aggregate({ _avg: { rating: true } }),
       this.prisma.subjectRequest.count({ where: { status: 'PENDING' } }),
       this.prisma.lesson.findMany({
@@ -142,6 +170,52 @@ export class UsersService {
           tutor_id: true,
           subject_id: true,
           price_per_hour: true,
+        },
+      }),
+      this.prisma.lesson.count({ where: { status: 'CANCELLED' } }),
+      this.prisma.lesson.findMany({
+        where: {
+          status: 'SCHEDULED',
+          lesson_date: {
+            gte: new Date(new Date().toISOString().slice(0, 10)),
+            lt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          },
+        },
+        include: {
+          tutor: { select: { first_name: true, last_name: true } },
+          subject: { select: { name: true } },
+          bookings: {
+            where: { status: { not: 'CANCELLED' } },
+            include: { student: { select: { first_name: true, last_name: true } } },
+          },
+        },
+        orderBy: [{ lesson_date: 'asc' }, { start_time: 'asc' }],
+      }),
+      this.prisma.subjectRequest.findMany({
+        where: { status: 'PENDING' },
+        include: { tutor: { select: { first_name: true, last_name: true } } },
+        orderBy: { created_at: 'asc' },
+        take: 8,
+      }),
+      this.prisma.lesson.findMany({
+        where: {
+          status: 'CANCELLED',
+          cancelled_at: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+        },
+        include: {
+          tutor: { select: { first_name: true, last_name: true } },
+          subject: { select: { name: true } },
+        },
+        orderBy: { cancelled_at: 'desc' },
+        take: 8,
+      }),
+      this.prisma.availability.findMany({
+        where: { is_active: true, tutor: { status: 'ACTIVE' } },
+        select: {
+          tutor_id: true,
+          start_time: true,
+          end_time: true,
+          tutor: { select: { first_name: true, last_name: true } },
         },
       }),
     ]);
@@ -192,18 +266,228 @@ export class UsersService {
       }))
       .sort((left, right) => right.count - left.count);
 
+    const availableHoursByTutor = new Map<number, number>();
+    const tutorNames = new Map<number, string>();
+    for (const availability of tutorAvailability) {
+      const [startHour, startMinute] = availability.start_time.split(':').map(Number);
+      const [endHour, endMinute] = availability.end_time.split(':').map(Number);
+      const hours = (endHour * 60 + endMinute - startHour * 60 - startMinute) / 60;
+      availableHoursByTutor.set(
+        availability.tutor_id,
+        (availableHoursByTutor.get(availability.tutor_id) ?? 0) + Math.max(hours, 0),
+      );
+      tutorNames.set(
+        availability.tutor_id,
+        `${availability.tutor.first_name} ${availability.tutor.last_name}`,
+      );
+    }
+
     return {
       year,
       studentCount,
+      activeStudentCount,
       tutorCount,
+      activeTutorCount,
       averageRating: reviewStats._avg.rating,
       pendingRequests,
+      cancelledLessonCount,
+      upcomingLessons,
+      pendingRequestItems,
+      recentlyCancelledLessons,
+      tutorUtilization: [...availableHoursByTutor.entries()]
+        .map(([tutorId, weeklyHours]) => {
+          const hoursBookedThisWeek = upcomingLessons
+            .filter(
+              (lesson) =>
+                lesson.tutor_id === tutorId && lesson.bookings.length > 0,
+            )
+            .reduce((hours, lesson) => {
+              const [startHour, startMinute] = lesson.start_time
+                .split(':')
+                .map(Number);
+              const [endHour, endMinute] = lesson.end_time
+                .split(':')
+                .map(Number);
+              return (
+                hours +
+                (endHour * 60 +
+                  endMinute -
+                  startHour * 60 -
+                  startMinute) /
+                  60
+              );
+            }, 0);
+          return {
+            tutorId,
+            tutorName: tutorNames.get(tutorId) ?? `Korepetytor #${tutorId}`,
+            weeklyHours,
+            bookedHours: Math.round(hoursBookedThisWeek * 100) / 100,
+            utilizationPercentage:
+              weeklyHours === 0
+                ? 0
+                : Math.min(
+                    Math.round((hoursBookedThisWeek / weeklyHours) * 100),
+                    100,
+                  ),
+          };
+        })
+        .sort(
+          (left, right) =>
+            right.utilizationPercentage - left.utilizationPercentage,
+        )
+        .slice(0, 10),
       monthlyRevenue: monthlyRevenue.map((item) => ({
         ...item,
         revenue: Math.round(item.revenue * 100) / 100,
       })),
       lessonsBySubject,
       completedLessonCount: lessons.length,
+    };
+  }
+
+  async getAuditLog(query: SearchAuditLogDto) {
+    if (query.from && query.to && query.from > query.to) {
+      throw new BadRequestException(
+        'Data początkowa nie może być późniejsza od daty końcowej.',
+      );
+    }
+
+    const search = query.search?.trim();
+    const toExclusive = query.to
+      ? new Date(`${query.to}T00:00:00.000Z`)
+      : undefined;
+    toExclusive?.setUTCDate(toExclusive.getUTCDate() + 1);
+    const where: Prisma.AdminAuditLogWhereInput = {
+      AND: [{ action: { not: 'DEMO_DATA_EXPANSION' } }],
+      ...(query.from && {
+        created_at: { gte: new Date(`${query.from}T00:00:00.000Z`) },
+      }),
+      ...(query.to && {
+        created_at: {
+          ...(query.from && {
+            gte: new Date(`${query.from}T00:00:00.000Z`),
+          }),
+          lt: toExclusive,
+        },
+      }),
+      ...(query.actorId !== undefined && { actor_id: query.actorId }),
+      ...(query.action && { action: query.action }),
+      ...(query.entityType && { entity_type: query.entityType }),
+      ...(search && {
+        OR: [
+          { action: { contains: search } },
+          { entity_type: { contains: search } },
+          { details: { contains: search } },
+          {
+            actor: {
+              OR: [
+                { first_name: { contains: search } },
+                { last_name: { contains: search } },
+              ],
+            },
+          },
+        ],
+      }),
+    };
+
+    const [data, total, actors] = await Promise.all([
+      this.prisma.adminAuditLog.findMany({
+        where,
+        take: query.limit,
+        skip: query.offset,
+        orderBy: { created_at: 'desc' },
+        include: {
+          actor: { select: { id_users: true, first_name: true, last_name: true } },
+        },
+      }),
+      this.prisma.adminAuditLog.count({ where }),
+      this.prisma.user.findMany({
+        where: { role: { name: 'admin' } },
+        select: {
+          id_users: true,
+          first_name: true,
+          last_name: true,
+        },
+        orderBy: [{ last_name: 'asc' }, { first_name: 'asc' }],
+      }),
+    ]);
+    return { data, total, limit: query.limit, offset: query.offset, actors };
+  }
+
+  async getUserActivity(userId: number) {
+    const user = await this.prisma.user.findFirst({
+      where: { id_users: userId, role: { name: { in: ['student', 'tutor'] } } },
+      select: {
+        id_users: true,
+        first_name: true,
+        last_name: true,
+        role: { select: { name: true } },
+        created_at: true,
+        bookings_as_student: {
+          orderBy: { booking_date: 'desc' },
+          take: 10,
+          include: {
+            lesson: {
+              select: {
+                id_lessons: true,
+                lesson_date: true,
+                start_time: true,
+                end_time: true,
+                status: true,
+                subject: { select: { name: true } },
+                tutor: { select: { first_name: true, last_name: true } },
+              },
+            },
+          },
+        },
+        lessons_as_tutor: {
+          orderBy: { lesson_date: 'desc' },
+          take: 10,
+          select: {
+            id_lessons: true,
+            lesson_date: true,
+            start_time: true,
+            end_time: true,
+            status: true,
+            subject: { select: { name: true } },
+          },
+        },
+      },
+    });
+    if (!user) {
+      throw new NotFoundException('Uczeń lub korepetytor nie został znaleziony.');
+    }
+    const [bookingCount, tutoringLessonCount, reviewCount, gradeCount, auditEvents] =
+      await Promise.all([
+        this.prisma.booking.count({ where: { student_id: userId } }),
+        this.prisma.lesson.count({ where: { tutor_id: userId } }),
+        this.prisma.review.count({
+          where: user.role.name === 'student' ? { student_id: userId } : { tutor_id: userId },
+        }),
+        this.prisma.monthlyGrade.count({
+          where: user.role.name === 'student' ? { student_id: userId } : { tutor_id: userId },
+        }),
+        this.prisma.adminAuditLog.findMany({
+          where: {
+            OR: [
+              { actor_id: userId },
+              { entity_type: 'user', entity_id: userId },
+            ],
+          },
+          orderBy: { created_at: 'desc' },
+          take: 20,
+          include: {
+            actor: { select: { first_name: true, last_name: true } },
+          },
+        }),
+      ]);
+    return {
+      user,
+      bookingCount,
+      tutoringLessonCount,
+      reviewCount,
+      gradeCount,
+      auditEvents,
     };
   }
 
@@ -216,10 +500,21 @@ export class UsersService {
       },
       orderBy: [{ year: 'desc' }, { month: 'desc' }, { created_at: 'desc' }],
     });
-    return reports.map((report) => ({
-      ...report,
-      details: this.parseFinancialReportDetails(report.details),
-    }));
+    return reports.map((report) => {
+      const details = this.parseFinancialReportDetails(report.details);
+      const lessonIds = details.flatMap((detail) =>
+        typeof detail === 'object' &&
+        detail !== null &&
+        'lesson_id' in detail
+          ? [detail.lesson_id]
+          : [],
+      );
+      return {
+        ...report,
+        details,
+        lesson_count: new Set(lessonIds).size,
+      };
+    });
   }
 
   async getFinancialReport(reportId: number) {
@@ -325,15 +620,27 @@ export class UsersService {
       }));
     });
     const roundCurrency = (value: number) => Math.round(value * 100) / 100;
-    const report = await this.prisma.financialReport.create({
-      data: {
-        month,
-        year,
-        generated_by_user_id: adminId,
-        total_student_cost: roundCurrency(totalStudentCost),
-        total_tutor_salary: roundCurrency(totalTutorSalary),
-        details: JSON.stringify(details),
-      },
+    const report = await this.prisma.$transaction(async (tx) => {
+      const financialReport = await tx.financialReport.create({
+        data: {
+          month,
+          year,
+          generated_by_user_id: adminId,
+          total_student_cost: roundCurrency(totalStudentCost),
+          total_tutor_salary: roundCurrency(totalTutorSalary),
+          details: JSON.stringify(details),
+        },
+      });
+      await tx.adminAuditLog.create({
+        data: {
+          actor_id: adminId,
+          action: 'FINANCIAL_REPORT_GENERATED',
+          entity_type: 'financial_report',
+          entity_id: financialReport.id_financial_reports,
+          details: JSON.stringify({ month, year }),
+        },
+      });
+      return financialReport;
     });
 
     return {
@@ -345,7 +652,7 @@ export class UsersService {
     };
   }
 
-  async updateUser(userId: number, dto: UpdateUserDto) {
+  async updateUser(adminId: number, userId: number, dto: UpdateUserDto) {
     const user = await this.findManagedUser(userId);
 
     if (dto.email && dto.email !== user.email) {
@@ -360,19 +667,99 @@ export class UsersService {
       }
     }
 
+    const managedUser = await this.prisma.user.findUnique({
+      where: { id_users: userId },
+      select: {
+        role: { select: { name: true } },
+        first_name: true,
+        last_name: true,
+        email: true,
+        phone: true,
+      },
+    });
+    if (!managedUser) {
+      throw new NotFoundException('Użytkownik nie został znaleziony.');
+    }
+
+    const { role, ...userFields } = dto;
     try {
-      return await this.prisma.user.update({
-        where: { id_users: userId },
-        data: dto,
-        select: {
-          id_users: true,
-          first_name: true,
-          last_name: true,
-          email: true,
-          phone: true,
-          status: true,
-          role: { select: { name: true } },
-        },
+      return await this.prisma.$transaction(async (tx) => {
+        if (role && role !== managedUser.role.name) {
+          const [
+            lessonCount,
+            bookingCount,
+            reviewCount,
+            gradeCount,
+            requestCount,
+            offerCount,
+            availabilityCount,
+          ] = await Promise.all([
+            tx.lesson.count({ where: { tutor_id: userId } }),
+            tx.booking.count({ where: { student_id: userId } }),
+            tx.review.count({
+              where: { OR: [{ student_id: userId }, { tutor_id: userId }] },
+            }),
+            tx.monthlyGrade.count({
+              where: { OR: [{ student_id: userId }, { tutor_id: userId }] },
+            }),
+            tx.subjectRequest.count({ where: { tutor_id: userId } }),
+            tx.tutorSubject.count({ where: { tutor_id: userId } }),
+            tx.availability.count({ where: { tutor_id: userId } }),
+          ]);
+          if (
+            lessonCount +
+              bookingCount +
+              reviewCount +
+              gradeCount +
+              requestCount +
+              offerCount +
+              availabilityCount >
+            0
+          ) {
+            throw new ConflictException(
+              'Nie można zmienić roli konta powiązanego z historią. Zablokuj konto i utwórz nowe z właściwą rolą.',
+            );
+          }
+        }
+        const roleRecord = role
+          ? await tx.role.findUnique({ where: { name: role } })
+          : null;
+        if (role && !roleRecord) {
+          throw new NotFoundException('Wybrana rola nie istnieje.');
+        }
+        const updatedUser = await tx.user.update({
+          where: { id_users: userId },
+          data: {
+            ...userFields,
+            ...(roleRecord && { role_id: roleRecord.id_roles }),
+            ...(roleRecord && roleRecord.name !== managedUser.role.name
+              ? { token_version: { increment: 1 } }
+              : {}),
+          },
+          select: {
+            id_users: true,
+            first_name: true,
+            last_name: true,
+            email: true,
+            phone: true,
+            status: true,
+            role: { select: { name: true } },
+          },
+        });
+        await tx.adminAuditLog.create({
+          data: {
+            actor_id: adminId,
+            action: role ? 'USER_UPDATED' : 'USER_DETAILS_UPDATED',
+            entity_type: 'user',
+            entity_id: userId,
+            details: JSON.stringify({
+              changedFields: Object.keys(dto),
+              previousRole: managedUser.role.name,
+              role: updatedUser.role.name,
+            }),
+          },
+        });
+        return updatedUser;
       });
     } catch (error) {
       if (
@@ -387,47 +774,108 @@ export class UsersService {
     }
   }
 
-  async updateUserStatus(userId: number, dto: UpdateUserStatusDto) {
-    await this.findManagedUser(userId);
-    return this.prisma.user.update({
-      where: { id_users: userId },
-      data: { status: dto.status },
-      select: {
-        id_users: true,
-        first_name: true,
-        last_name: true,
-        email: true,
-        phone: true,
-        status: true,
-        role: { select: { name: true } },
-      },
+  async updateUserStatus(
+    adminId: number,
+    userId: number,
+    dto: UpdateUserStatusDto,
+  ) {
+    const user = await this.findManagedUser(userId);
+    return this.prisma.$transaction(async (tx) => {
+      const updatedUser = await tx.user.update({
+        where: { id_users: userId },
+        data: { status: dto.status },
+        select: {
+          id_users: true,
+          first_name: true,
+          last_name: true,
+          email: true,
+          phone: true,
+          status: true,
+          role: { select: { name: true } },
+        },
+      });
+      await tx.adminAuditLog.create({
+        data: {
+          actor_id: adminId,
+          action: dto.status === 'BLOCKED' ? 'USER_BLOCKED' : 'USER_UNBLOCKED',
+          entity_type: 'user',
+          entity_id: userId,
+          details: JSON.stringify({ email: user.email, status: dto.status }),
+        },
+      });
+      return updatedUser;
     });
   }
 
-  async deleteTutor(userId: number) {
+  async deleteTutor(adminId: number, userId: number) {
     const tutor = await this.prisma.user.findFirst({
       where: { id_users: userId, role: { name: 'tutor' } },
-      select: { id_users: true },
+      select: {
+        id_users: true,
+        email: true,
+        status: true,
+      },
     });
     if (!tutor) {
       throw new NotFoundException('Korepetytor nie został znaleziony.');
     }
 
-    const [lessonCount, reviewCount, gradeCount, requestCount] =
+    const [lessonCount, reviewCount, gradeCount, requestCount, issueCount] =
       await Promise.all([
         this.prisma.lesson.count({ where: { tutor_id: userId } }),
         this.prisma.review.count({ where: { tutor_id: userId } }),
         this.prisma.monthlyGrade.count({ where: { tutor_id: userId } }),
         this.prisma.subjectRequest.count({ where: { tutor_id: userId } }),
+        this.prisma.lessonIssue.count({ where: { reporter_id: userId } }),
       ]);
-    if (lessonCount + reviewCount + gradeCount + requestCount > 0) {
-      throw new ConflictException(
-        'Nie można usunąć korepetytora powiązanego z historią zajęć. Zablokuj konto, aby zachować dane historyczne.',
-      );
-    }
+    const hasHistory =
+      lessonCount + reviewCount + gradeCount + requestCount + issueCount > 0;
+    return this.prisma.$transaction(async (tx) => {
+      if (hasHistory) {
+        const archivedTutor = await tx.user.update({
+          where: { id_users: userId },
+          data: {
+            status: 'BLOCKED',
+            token_version: { increment: 1 },
+          },
+          select: {
+            id_users: true,
+            first_name: true,
+            last_name: true,
+            email: true,
+            phone: true,
+            status: true,
+            role: { select: { name: true } },
+          },
+        });
+        await tx.adminAuditLog.create({
+          data: {
+            actor_id: adminId,
+            action: 'TUTOR_ARCHIVED',
+            entity_type: 'user',
+            entity_id: userId,
+            details: JSON.stringify({
+              email: tutor.email,
+              status: 'BLOCKED',
+              preservedHistory: true,
+            }),
+          },
+        });
+        return { ...archivedTutor, archived: true };
+      }
 
-    await this.prisma.user.delete({ where: { id_users: userId } });
-    return { id_users: userId };
+      await tx.adminAuditLog.create({
+        data: {
+          actor_id: adminId,
+          action: 'TUTOR_DELETED',
+          entity_type: 'user',
+          entity_id: userId,
+          details: JSON.stringify({ userId }),
+        },
+      });
+      await tx.user.delete({ where: { id_users: userId } });
+      return { id_users: userId, archived: false };
+    });
   }
 
   private async findManagedUser(userId: number) {

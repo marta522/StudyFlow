@@ -1,21 +1,88 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Navbar } from "../components/Navbar";
-import { FinancialReports } from "../components/FinancialReports";
-import { LessonsList } from "../components/LessonsList";
-import { MyBookings } from "../components/MyBookings";
-import { StudentStats } from "../components/StudentStats";
-import { SubjectRequests } from "../components/SubjectRequests";
-import { UserManagement } from "../components/UserManagement";
-import { TutorStudents } from "../components/TutorStudents";
-import { TutorAvailability } from "../components/TutorAvailability";
-import { TutorProfile } from "../components/TutorProfile";
-import { MyTutors, type TutorAction } from "../components/MyTutors";
-import { TutorDetailView } from "../components/TutorDetailView";
-import { TutorSearch } from "../components/TutorSearch";
-import { AdminMetrics } from "../components/AdminMetrics";
-import { AdminSchedule } from "../components/AdminSchedule";
-import { AdminSubjects } from "../components/AdminSubjects";
+import type { TutorAction } from "../components/MyTutors";
 import { useAuth } from "../context/useAuth";
+
+const FinancialReports = lazy(() =>
+  import("../components/FinancialReports").then((module) => ({
+    default: module.FinancialReports,
+  })),
+);
+const LessonsList = lazy(() =>
+  import("../components/LessonsList").then((module) => ({
+    default: module.LessonsList,
+  })),
+);
+const MyBookings = lazy(() =>
+  import("../components/MyBookings").then((module) => ({
+    default: module.MyBookings,
+  })),
+);
+const StudentStats = lazy(() =>
+  import("../components/StudentStats").then((module) => ({
+    default: module.StudentStats,
+  })),
+);
+const SubjectRequests = lazy(() =>
+  import("../components/SubjectRequests").then((module) => ({
+    default: module.SubjectRequests,
+  })),
+);
+const UserManagement = lazy(() =>
+  import("../components/UserManagement").then((module) => ({
+    default: module.UserManagement,
+  })),
+);
+const TutorStudents = lazy(() =>
+  import("../components/TutorStudents").then((module) => ({
+    default: module.TutorStudents,
+  })),
+);
+const TutorAvailability = lazy(() =>
+  import("../components/TutorAvailability").then((module) => ({
+    default: module.TutorAvailability,
+  })),
+);
+const TutorProfile = lazy(() =>
+  import("../components/TutorProfile").then((module) => ({
+    default: module.TutorProfile,
+  })),
+);
+const MyTutors = lazy(() =>
+  import("../components/MyTutors").then((module) => ({
+    default: module.MyTutors,
+  })),
+);
+const TutorDetailView = lazy(() =>
+  import("../components/TutorDetailView").then((module) => ({
+    default: module.TutorDetailView,
+  })),
+);
+const TutorSearch = lazy(() =>
+  import("../components/TutorSearch").then((module) => ({
+    default: module.TutorSearch,
+  })),
+);
+const AdminMetrics = lazy(() =>
+  import("../components/AdminMetrics").then((module) => ({
+    default: module.AdminMetrics,
+  })),
+);
+const AdminSchedule = lazy(() =>
+  import("../components/AdminSchedule").then((module) => ({
+    default: module.AdminSchedule,
+  })),
+);
+const AdminLessonIssues = lazy(() =>
+  import("../components/AdminLessonIssues").then((module) => ({
+    default: module.AdminLessonIssues,
+  })),
+);
+const AdminSubjects = lazy(() =>
+  import("../components/AdminSubjects").then((module) => ({
+    default: module.AdminSubjects,
+  })),
+);
 
 type DashboardTab =
   | "available"
@@ -30,7 +97,8 @@ type DashboardTab =
   | "tutor-availability"
   | "tutor-profile"
   | "admin-metrics"
-  | "admin-subjects";
+  | "admin-subjects"
+  | "admin-issues";
 
 function isAllowedDashboardTab(
   tab: string,
@@ -41,7 +109,8 @@ function isAllowedDashboardTab(
 
 export function DashboardPage() {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<DashboardTab>("available");
+  const [activeTab, setActiveTab] = useState<DashboardTab>("my-bookings");
+  const [welcomeVisible, setWelcomeVisible] = useState(true);
   const [selectedTutor, setSelectedTutor] = useState<{
     id: number;
     action: TutorAction;
@@ -65,45 +134,57 @@ export function DashboardPage() {
               "users",
               "my-bookings",
               "admin-subjects",
+              "admin-issues",
               "subject-requests",
               "reports",
             ]
           : [];
 
+  function handleTabChange(tab: string) {
+    if (!isAllowedDashboardTab(tab, allowedTabs)) return;
+    if (tab !== "my-bookings") {
+      setWelcomeVisible(false);
+    }
+    setActiveTab(tab);
+    setSelectedTutor(null);
+  }
+
   return (
     <div className="min-h-screen bg-brand-black text-white">
       <Navbar
         activeTab={activeTab}
-        setActiveTab={(tab) => {
-          if (isAllowedDashboardTab(tab, allowedTabs)) {
-            setActiveTab(tab);
-            setSelectedTutor(null);
-          }
-        }}
+        setActiveTab={handleTabChange}
       />
 
       <main className="full-width-container space-y-8 py-6 sm:py-8">
-        {!selectedTutor && (
-          <section className="flex flex-col justify-between gap-5 rounded-2xl border border-brand-cardBorder bg-brand-card p-6 sm:flex-row sm:items-center sm:p-8">
-            <div>
-              <p className="text-sm font-medium text-brand-yellow">
-                Twój panel StudyFlow
-              </p>
-              <h1 className="dashboard-welcome-title mt-2 font-extrabold tracking-tight">
-                Witaj ponownie, {user?.first_name}!
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-brand-textMuted sm:text-base">
-                Wybierz obszar, do którego chcesz przejść. Twoja nauka i
-                organizacja zajęć zaczynają się tutaj.
-              </p>
-            </div>
-            <span className="inline-flex w-fit items-center rounded-full border border-brand-yellow/40 bg-brand-yellow/10 px-4 py-2 text-sm font-medium capitalize text-brand-yellow">
-              Rola: {user?.role}
-            </span>
-          </section>
-        )}
+        {activeTab === "my-bookings" &&
+          welcomeVisible &&
+          !selectedTutor &&
+          user && (
+            <section className="flex flex-col justify-between gap-5 rounded-2xl border border-brand-cardBorder bg-brand-card p-6 sm:flex-row sm:items-center sm:p-8">
+              <div>
+                <p className="text-sm font-medium text-brand-yellow">
+                  Twój panel StudyFlow
+                </p>
+                <h1 className="dashboard-welcome-title mt-2 font-extrabold tracking-tight">
+                  Witaj ponownie, {user.first_name}!
+                </h1>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-brand-textMuted sm:text-base">
+                  Tutaj znajdziesz swój harmonogram oraz lekcje, które już się
+                  odbyły i te, które dopiero przed Tobą.
+                </p>
+              </div>
+            </section>
+          )}
 
         <section className="pt-4" aria-live="polite">
+          <Suspense
+            fallback={
+              <p role="status" className="py-8 text-center text-brand-textMuted">
+                Ładowanie widoku…
+              </p>
+            }
+          >
           {activeTab === "available" && <LessonsList />}
           {activeTab === "find-tutors" &&
             user?.role === "student" &&
@@ -122,7 +203,13 @@ export function DashboardPage() {
               />
             ))}
           {activeTab === "my-bookings" &&
-            (user?.role === "admin" ? <AdminSchedule /> : <MyBookings />)}
+            (user?.role === "admin" ? (
+              <AdminSchedule />
+            ) : (
+              <MyBookings
+                onOpenTutorStudents={() => handleTabChange("tutor-students")}
+              />
+            ))}
           {activeTab === "reports" && user?.role === "admin" && (
             <FinancialReports />
           )}
@@ -153,12 +240,18 @@ export function DashboardPage() {
             <UserManagement />
           )}
           {activeTab === "admin-metrics" && user?.role === "admin" && (
-            <AdminMetrics />
+            <AdminMetrics
+              onGoToRequests={() => handleTabChange("subject-requests")}
+              onGoToSchedule={() => handleTabChange("my-bookings")}
+            />
           )}
           {activeTab === "admin-subjects" && user?.role === "admin" && (
             <AdminSubjects
-              onGoToRequests={() => setActiveTab("subject-requests")}
+              onGoToRequests={() => handleTabChange("subject-requests")}
             />
+          )}
+          {activeTab === "admin-issues" && user?.role === "admin" && (
+            <AdminLessonIssues />
           )}
           {activeTab === "tutor-students" && user?.role === "tutor" && (
             <TutorStudents />
@@ -169,6 +262,7 @@ export function DashboardPage() {
           {activeTab === "tutor-profile" && user?.role === "tutor" && (
             <TutorProfile />
           )}
+          </Suspense>
         </section>
       </main>
     </div>

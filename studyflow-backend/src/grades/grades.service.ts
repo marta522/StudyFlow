@@ -13,58 +13,66 @@ export class GradesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async createGrade(tutorId: number, dto: CreateGradeDto) {
-    const studentLesson = await this.prisma.lesson.findFirst({
+    const lesson = await this.prisma.lesson.findFirst({
       where: {
+        id_lessons: dto.lesson_id,
         tutor_id: tutorId,
-        subject_id: dto.subject_id,
-        status: 'COMPLETED',
+        status: { not: 'CANCELLED' },
         bookings: {
           some: {
-            student_id: dto.student_id,
             status: { not: 'CANCELLED' },
           },
         },
       },
-      select: { id_lessons: true },
+      select: {
+        id_lessons: true,
+        lesson_date: true,
+        start_time: true,
+        end_time: true,
+        subject_id: true,
+        bookings: {
+          where: { status: { not: 'CANCELLED' } },
+          select: { student_id: true },
+        },
+      },
     });
 
-    if (!studentLesson) {
+    if (!lesson || lesson.bookings.length === 0) {
       throw new ForbiddenException(
-        'Możesz oceniać tylko ucznia, z którym odbyłeś lekcję z tego przedmiotu.',
+        'Możesz ocenić tylko lekcję z aktywną rezerwacją u Ciebie.',
       );
     }
+
+    const lessonEnd = new Date(lesson.lesson_date);
+    const [hours, minutes] = lesson.end_time.split(':').map(Number);
+    lessonEnd.setUTCHours(hours, minutes, 0, 0);
+    if (lessonEnd > new Date()) {
+      throw new ForbiddenException(
+        'Ocenę można wystawić dopiero po zakończeniu lekcji.',
+      );
+    }
+
+    const studentId = lesson.bookings[0].student_id;
+    const lessonDate = new Date(lesson.lesson_date);
 
     try {
       return await this.prisma.$transaction(
         async (tx) => {
-          const existingGrade = await tx.monthlyGrade.findFirst({
-            where: {
-              student_id: dto.student_id,
-              subject_id: dto.subject_id,
-              month: dto.month,
-              year: dto.year,
-            },
-            select: { id_monthly_grades: true },
-          });
-          if (existingGrade) {
-            throw new ConflictException(
-              'Uczeń ma już ocenę z tego przedmiotu za wybrany miesiąc.',
-            );
-          }
-
           return tx.monthlyGrade.create({
             data: {
+              lesson_id: lesson.id_lessons,
               tutor_id: tutorId,
-              student_id: dto.student_id,
-              subject_id: dto.subject_id,
-              month: dto.month,
-              year: dto.year,
+              student_id: studentId,
+              subject_id: lesson.subject_id,
+              month: lessonDate.getUTCMonth() + 1,
+              year: lessonDate.getUTCFullYear(),
               grade: dto.grade,
               comment: dto.comment,
             },
             include: {
               subject: true,
               tutor: { select: { first_name: true, last_name: true } },
+              lesson: { select: { lesson_date: true } },
             },
           });
         },
@@ -73,10 +81,10 @@ export class GradesService {
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2034'
+        (error.code === 'P2034' || error.code === 'P2002')
       ) {
         throw new ConflictException(
-          'Ocena za ten miesiąc została właśnie dodana. Odśwież dane ucznia.',
+          'Uczeń ma już wystawioną ocenę z tego przedmiotu w danym miesiącu.',
         );
       }
       throw error;
@@ -88,34 +96,36 @@ export class GradesService {
       throw new ForbiddenException('Możesz przeglądać tylko własne oceny.');
     }
 
-    const where =
-      role === 'tutor'
-        ? { student_id: studentId, tutor_id: requesterId }
-        : { student_id: studentId };
-
     if (role === 'tutor') {
-      const tutorHasGrades = await this.prisma.monthlyGrade.findFirst({
-        where,
-        select: { id_monthly_grades: true },
+      const tutorHasStudent = await this.prisma.booking.findFirst({
+        where: {
+          student_id: studentId,
+          status: { not: 'CANCELLED' },
+          lesson: { tutor_id: requesterId },
+        },
+        select: { id_bookings: true },
       });
 
-      if (!tutorHasGrades) {
-        const student = await this.prisma.user.findUnique({
+      if (!tutorHasStudent) {
+        const studentExists = await this.prisma.user.findUnique({
           where: { id_users: studentId },
           select: { id_users: true },
         });
-        if (!student) {
+        if (!studentExists) {
           throw new NotFoundException('Uczeń nie został znaleziony.');
         }
-        return [];
+        throw new ForbiddenException(
+          'Możesz przeglądać oceny tylko uczniów z aktywną rezerwacją u Ciebie.',
+        );
       }
     }
 
     return this.prisma.monthlyGrade.findMany({
-      where,
+      where: { student_id: studentId },
       include: {
         subject: true,
         tutor: { select: { first_name: true, last_name: true } },
+        lesson: { select: { lesson_date: true } },
       },
       orderBy: { created_at: 'desc' },
     });

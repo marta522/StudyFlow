@@ -4,6 +4,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
@@ -11,11 +12,13 @@ import {
 export class CreateManagedUserDto {
   @IsString()
   @IsNotEmpty()
+  @Matches(/\S/)
   @MaxLength(45)
   first_name!: string;
 
   @IsString()
   @IsNotEmpty()
+  @Matches(/\S/)
   @MaxLength(45)
   last_name!: string;
 

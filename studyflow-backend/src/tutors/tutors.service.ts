@@ -24,6 +24,23 @@ export class TutorsService {
         'Cena minimalna nie może być wyższa od maksymalnej.',
       );
     }
+    if (
+      Boolean(query.available_from) !== Boolean(query.available_to) ||
+      ((query.available_from || query.available_to) && !query.available_date)
+    ) {
+      throw new BadRequestException(
+        'Wybierając zakres godzin, podaj godzinę początkową, końcową i konkretny dzień.',
+      );
+    }
+    if (
+      query.available_from &&
+      query.available_to &&
+      query.available_from >= query.available_to
+    ) {
+      throw new BadRequestException(
+        'Godzina początkowa musi być wcześniejsza od końcowej.',
+      );
+    }
 
     const where: Prisma.UserWhereInput = {
       role: { name: 'tutor' },
@@ -56,6 +73,11 @@ export class TutorsService {
             status: 'SCHEDULED',
             subject: { status: 'ACTIVE' },
             bookings: { none: { status: { not: 'CANCELLED' } } },
+            ...(query.available_from &&
+              query.available_to && {
+                start_time: { gte: query.available_from },
+                end_time: { lte: query.available_to },
+              }),
           },
         },
       }),

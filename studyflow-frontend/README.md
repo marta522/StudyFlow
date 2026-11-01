@@ -11,7 +11,7 @@
 
 Przed uruchomieniem projektu upewnij się, że masz zainstalowane:
 
-1. **Node.js** w wersji `v18` lub nowszej oraz menedżer pakietów `npm`
+1. **Node.js** w wersji `v24` lub nowszej oraz menedżer pakietów `npm`
 2. **Git**
 
 SQLite jest bazą plikową — nie wymaga instalowania ani uruchamiania PostgreSQL, Dockera ani osobnego serwera bazy danych. Zmiana z PostgreSQL nie przenosi automatycznie istniejących danych; lokalna baza SQLite zaczyna jako nowa baza.
@@ -45,6 +45,13 @@ cd StudyFlow
    DATABASE_URL="file:./dev.db"
    JWT_SECRET="super_secret_jwt_key_studyflow"
    PORT=3000
+   SMTP_HOST="smtp.example.com"
+   SMTP_PORT=587
+   SMTP_SECURE=false
+   SMTP_USER="studyflow@example.com"
+   SMTP_PASSWORD="your-smtp-password"
+   SMTP_FROM="StudyFlow <studyflow@example.com>"
+   FRONTEND_URL="http://localhost:5173"
    ```
 
    Plik bazy danych zostanie utworzony w `studyflow-backend/prisma/dev.db`.
@@ -70,6 +77,10 @@ cd StudyFlow
    ```
 
    Backend będzie dostępny pod adresem `http://localhost:3000`.
+
+   Odzyskiwanie hasła wymaga poprawnej konfiguracji SMTP. Link resetujący jest
+   jednorazowy i wygasa po 30 minutach. Instrukcję tworzenia i odtwarzania kopii
+   bazy znajdziesz w `studyflow-backend/README.md`.
 
 ### 3. Skonfiguruj i uruchom frontend
 
@@ -103,13 +114,25 @@ Otwórz nowe okno terminala i, z katalogu głównego repozytorium, wykonaj:
 
 ## 🔐 Konta testowe
 
-Konta są tworzone przez opcjonalny seed demonstracyjny.
+Podstawowe konta są tworzone przez seed demonstracyjny. Dodatkowe konta
+korepetytorów i uczniów pojawiają się po uruchomieniu addytywnego skryptu danych
+demo opisanego w `studyflow-backend/README.md`.
 
-| Rola | Email | Hasło |
-|---|---|---|
-| 👑 Administrator | `admin@studyflow.pl` | `haslo123` |
-| 🎓 Korepetytor | `tutor@studyflow.pl` | `haslo123` |
-| 📚 Uczeń | `student@studyflow.pl` | `haslo123` |
+| Rola             | Email                  | Hasło      |
+| ---------------- | ---------------------- | ---------- |
+| 👑 Administrator | `admin@studyflow.pl`   | `haslo123` |
+| 🎓 Korepetytor   | `tutor@studyflow.pl`   | `haslo123` |
+| 📚 Uczeń         | `student@studyflow.pl` | `haslo123` |
+
+Seed tworzy także konto `dariusz@studyflow.pl`, ucznia `anna@studyflow.pl`
+oraz przykładowe dane lekcji. Rozszerzony zestaw danych dodaje konta
+`demo.tutor01@studyflow.local`–`demo.tutor05@studyflow.local` i
+`demo.student01@studyflow.local`–`demo.student10@studyflow.local`, a także
+przedmioty, historię lekcji oraz powiązane dane.
+
+Wszystkie powyższe loginy i hasło są przeznaczone wyłącznie do lokalnych testów.
+Nie używaj ich w środowisku produkcyjnym. Zwykły seed usuwa dotychczasowe dane;
+rozszerzony zestaw demo można dopisać bez resetowania lokalnej bazy.
 
 ## 🌿 Wprowadzanie zmian
 

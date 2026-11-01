@@ -51,17 +51,20 @@ export function SubjectRequests() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const fetchRequests = useCallback(async () => {
-    const { data } = await api.get<SubjectRequest[]>("/subjects/requests");
-    setRequests(data);
-  }, []);
+    const endpoint =
+      user?.role === "tutor"
+        ? "/subjects/requests/mine"
+        : "/subjects/requests";
+    const { data } = await api.get<SubjectRequest[]>(endpoint);
+    return data;
+  }, [user?.role]);
 
   useEffect(() => {
-    if (user?.role !== "admin") return;
+    if (user?.role !== "admin" && user?.role !== "tutor") return;
 
     let cancelled = false;
-    void api
-      .get<SubjectRequest[]>("/subjects/requests")
-      .then(({ data }) => {
+    void fetchRequests()
+      .then((data) => {
         if (!cancelled) setRequests(data);
       })
       .catch((requestError: unknown) => {
@@ -69,7 +72,7 @@ export function SubjectRequests() {
           setError(
             getErrorMessage(
               requestError,
-              "Nie udało się pobrać zgłoszeń przedmiotów.",
+              "Nie udało się pobrać Twoich zgłoszeń przedmiotów.",
             ),
           );
         }
@@ -81,7 +84,7 @@ export function SubjectRequests() {
     return () => {
       cancelled = true;
     };
-  }, [user?.role]);
+  }, [fetchRequests, user?.role]);
 
   async function handleRequestSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -96,6 +99,16 @@ export function SubjectRequests() {
       setNotice("Zgłoszenie zostało przesłane administratorowi.");
       setSubjectName("");
       setDescription("");
+      try {
+        setRequests(await fetchRequests());
+      } catch (requestError: unknown) {
+        setError(
+          getErrorMessage(
+            requestError,
+            "Zgłoszenie wysłano, ale nie udało się odświeżyć listy.",
+          ),
+        );
+      }
     } catch (requestError: unknown) {
       setError(
         getErrorMessage(requestError, "Nie udało się zgłosić przedmiotu."),
@@ -119,7 +132,7 @@ export function SubjectRequests() {
           ? "Zgłoszenie zaakceptowano, a przedmiot został dodany."
           : "Zgłoszenie odrzucono.",
       );
-      await fetchRequests();
+      setRequests(await fetchRequests());
     } catch (requestError: unknown) {
       setError(
         getErrorMessage(
@@ -154,58 +167,157 @@ export function SubjectRequests() {
       )}
 
       {user?.role === "tutor" && (
-        <section className="space-y-4 rounded-2xl border border-brand-cardBorder bg-brand-card p-6">
-          <h2 className="flex items-center gap-2 text-xl font-bold text-brand-yellow">
-            <PlusCircle className="size-6" aria-hidden="true" />
-            Zgłoszenie nowego przedmiotu
-          </h2>
-          <p className="text-sm text-brand-textMuted">
-            Nie ma przedmiotu, którego szukasz? Wyślij prośbę do administratora.
-          </p>
-          <form onSubmit={handleRequestSubmit} className="max-w-lg space-y-4">
-            <div>
-              <label
-                htmlFor="requested-subject-name"
-                className="mb-1 block text-xs text-brand-textMuted"
+        <div className="grid gap-6 lg:grid-cols-2">
+          <section className="space-y-4 rounded-2xl border border-brand-cardBorder bg-brand-card p-6">
+            <h2 className="flex items-center gap-2 text-xl font-bold text-brand-yellow">
+              <PlusCircle className="size-6" aria-hidden="true" />
+              Zgłoszenie nowego przedmiotu
+            </h2>
+            <p className="text-sm text-brand-textMuted">
+              Nie ma przedmiotu, którego szukasz? Wyślij prośbę do administratora.
+            </p>
+            <form onSubmit={handleRequestSubmit} className="space-y-4">
+              <div>
+                <label
+                  htmlFor="requested-subject-name"
+                  className="mb-1 block text-xs text-brand-textMuted"
+                >
+                  Nazwa przedmiotu
+                </label>
+                <input
+                  id="requested-subject-name"
+                  type="text"
+                  value={subjectName}
+                  onChange={(event) => setSubjectName(event.target.value)}
+                  required
+                  maxLength={100}
+                  className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2 text-sm text-white outline-none focus:border-brand-yellow"
+                  placeholder="np. Astronomia"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="requested-subject-description"
+                  className="mb-1 block text-xs text-brand-textMuted"
+                >
+                  Opis / uzasadnienie
+                </label>
+                <textarea
+                  id="requested-subject-description"
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  rows={3}
+                  maxLength={5000}
+                  className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2 text-sm text-white outline-none focus:border-brand-yellow"
+                  placeholder="Krótki opis zakresu nauczania…"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="rounded-lg bg-brand-yellow px-6 py-2 font-semibold text-brand-black transition hover:bg-brand-yellowHover disabled:cursor-wait disabled:opacity-60"
               >
-                Nazwa przedmiotu
-              </label>
-              <input
-                id="requested-subject-name"
-                type="text"
-                value={subjectName}
-                onChange={(event) => setSubjectName(event.target.value)}
-                required
-                maxLength={100}
-                className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2 text-sm text-white outline-none focus:border-brand-yellow"
-                placeholder="np. Astronomia"
-              />
-            </div>
-            <div>
-              <label
-                htmlFor="requested-subject-description"
-                className="mb-1 block text-xs text-brand-textMuted"
+                {submitting ? "Wysyłanie…" : "Wyślij zgłoszenie"}
+              </button>
+            </form>
+          </section>
+
+          <section className="space-y-4" aria-labelledby="my-subject-requests-title">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2
+                id="my-subject-requests-title"
+                className="flex items-center gap-2 text-xl font-bold"
               >
-                Opis / uzasadnienie
-              </label>
-              <textarea
-                id="requested-subject-description"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                rows={3}
-                className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2 text-sm text-white outline-none focus:border-brand-yellow"
-                placeholder="Krótki opis zakresu nauczania…"
-              />
+                <BookPlus className="size-6 text-brand-yellow" aria-hidden="true" />
+                Moje zgłoszenia
+              </h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoading(true);
+                  setError(null);
+                  void fetchRequests()
+                    .then(setRequests)
+                    .catch((requestError: unknown) =>
+                      setError(
+                        getErrorMessage(
+                          requestError,
+                          "Nie udało się pobrać Twoich zgłoszeń.",
+                        ),
+                      ),
+                    )
+                    .finally(() => setLoading(false));
+                }}
+                disabled={loading}
+                className="inline-flex items-center gap-2 rounded-lg border border-brand-cardBorder px-3 py-2 text-sm text-brand-textMuted transition hover:border-brand-yellow hover:text-brand-yellow disabled:opacity-50"
+              >
+                <RefreshCw
+                  className={`size-4 ${loading ? "animate-spin" : ""}`}
+                  aria-hidden="true"
+                />
+                Odśwież
+              </button>
             </div>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="rounded-lg bg-brand-yellow px-6 py-2 font-semibold text-brand-black transition hover:bg-brand-yellowHover disabled:cursor-wait disabled:opacity-60"
-            >
-              {submitting ? "Wysyłanie…" : "Wyślij zgłoszenie"}
-            </button>
-          </form>
-        </section>
+
+            {loading ? (
+              <p role="status" className="py-6 text-brand-textMuted">
+                Ładowanie zgłoszeń…
+              </p>
+            ) : requests.length === 0 && !error ? (
+              <p className="rounded-2xl border border-brand-cardBorder bg-brand-card p-6 text-brand-textMuted">
+                Nie masz jeszcze żadnych zgłoszeń.
+              </p>
+            ) : requests.length > 0 ? (
+              <ul className="space-y-3">
+                {requests.map((request) => {
+                  const statusLabel =
+                    request.status === "APPROVED"
+                      ? "Zaakceptowane"
+                      : request.status === "REJECTED"
+                        ? "Odrzucone"
+                        : "W trakcie";
+                  const statusClass =
+                    request.status === "APPROVED"
+                      ? "border-green-500/30 bg-green-500/10 text-green-300"
+                      : request.status === "REJECTED"
+                        ? "border-red-500/30 bg-red-500/10 text-red-300"
+                        : "border-yellow-500/30 bg-yellow-500/10 text-yellow-200";
+
+                  return (
+                    <li
+                      key={request.id_subject_requests}
+                      className="rounded-xl border border-brand-cardBorder bg-brand-card p-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h3 className="font-semibold text-white">
+                            {request.subject_name}
+                          </h3>
+                          <p className="mt-1 text-xs text-brand-textMuted">
+                            Zgłoszono{" "}
+                            {new Date(request.created_at).toLocaleDateString(
+                              "pl-PL",
+                            )}
+                          </p>
+                        </div>
+                        <span
+                          className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusClass}`}
+                        >
+                          {statusLabel}
+                        </span>
+                      </div>
+                      {request.description && (
+                        <p className="mt-3 text-sm text-brand-textMuted">
+                          {request.description}
+                        </p>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+          </section>
+        </div>
       )}
 
       {user?.role === "admin" && (
@@ -227,6 +339,7 @@ export function SubjectRequests() {
                 setLoading(true);
                 setError(null);
                 void fetchRequests()
+                  .then(setRequests)
                   .catch((requestError: unknown) =>
                     setError(
                       getErrorMessage(

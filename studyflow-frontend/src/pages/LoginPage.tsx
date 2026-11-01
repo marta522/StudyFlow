@@ -1,7 +1,7 @@
 import axios from "axios";
 import { BookOpen, LogIn } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import api from "../api/axios";
 import type { User } from "../context/auth-context";
 import { useAuth } from "../context/useAuth";
@@ -42,6 +42,8 @@ export function LoginPage() {
   );
   const { login } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const passwordResetSuccess = searchParams.get("passwordReset") === "success";
 
   useEffect(() => {
     if (logoutWarning) sessionStorage.removeItem("logoutWarning");
@@ -103,6 +105,14 @@ export function LoginPage() {
             {logoutWarning}
           </div>
         )}
+        {passwordResetSuccess && (
+          <div
+            className="mt-6 rounded-lg border border-green-500/30 bg-green-500/10 p-3 text-center text-sm text-green-200"
+            role="status"
+          >
+            Hasło zostało zmienione. Zaloguj się nowym hasłem.
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="mt-7 space-y-5">
           <div>
@@ -119,6 +129,7 @@ export function LoginPage() {
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               required
+              maxLength={100}
               className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-4 py-3 text-white outline-none transition placeholder:text-brand-textMuted/60 focus:border-brand-yellow focus:ring-2 focus:ring-brand-yellow/20"
               placeholder="np. jan.kowalski@email.com"
             />
@@ -138,9 +149,16 @@ export function LoginPage() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               required
+              maxLength={72}
               className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-4 py-3 text-white outline-none transition placeholder:text-brand-textMuted/60 focus:border-brand-yellow focus:ring-2 focus:ring-brand-yellow/20"
               placeholder="Wpisz swoje hasło"
             />
+            <Link
+              to="/forgot-password"
+              className="mt-2 inline-block text-sm font-medium text-brand-yellow hover:underline"
+            >
+              Nie pamiętasz hasła?
+            </Link>
           </div>
 
           <button

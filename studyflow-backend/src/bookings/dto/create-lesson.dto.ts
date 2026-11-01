@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsString,
   Matches,
+  MaxLength,
   Min,
 } from 'class-validator';
 
@@ -12,6 +13,11 @@ export class CreateLessonDto {
   @IsInt()
   @Min(1)
   subject_id: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  student_id?: number;
 
   @IsDateString()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
@@ -29,5 +35,6 @@ export class CreateLessonDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(5000)
   homework?: string;
 }

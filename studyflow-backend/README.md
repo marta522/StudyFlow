@@ -2,6 +2,7 @@
 
 Backend API for StudyFlow, built with NestJS, Prisma, and SQLite. API routes
 use the `/api` prefix and protected routes require a bearer access token.
+Use Node.js 24 or newer for the database backup and restore commands.
 
 ## Run locally
 
@@ -41,8 +42,12 @@ transferred to SQLite.
 | --- | --- | --- | --- |
 | `POST` | `/api/auth/register` | Public | Creates a student or tutor account. |
 | `POST` | `/api/auth/login` | Public | Authenticates and returns an access token. |
+| `POST` | `/api/auth/request-password-reset` | Public | Sends a time-limited password reset link when the email belongs to an active account. |
+| `POST` | `/api/auth/reset-password` | Public | Changes the password using a valid, single-use reset token. |
 | `POST` | `/api/auth/logout` | Authenticated | Invalidates all of the user's active tokens. |
 | `POST` | `/api/auth/change-password` | Authenticated | Changes the password and invalidates existing tokens. |
+| `GET` | `/api/tutors/search` | Public | Searches active tutors by subject, price, rating, and free lesson date/time range. |
+| `GET` | `/api/tutors/:tutorId/availability` | Public | Lists a tutor's upcoming free lesson slots. |
 | `GET` | `/api/students?q=` | Tutor, administrator | Lists students; tutors only see students with a non-cancelled booking for one of their lessons. Optional `q` searches first name, last name, and email. |
 | `POST` | `/api/bookings/lessons` | Tutor | Creates an available lesson within the tutor's active subject offer and availability. |
 | `PATCH` | `/api/bookings/lessons/:id` | Tutor | Edits an unbooked scheduled lesson. |
@@ -57,9 +62,78 @@ transferred to SQLite.
 | `GET` | `/api/users/reports/financial` | Administrator | Lists generated financial reports. |
 | `GET` | `/api/users/reports/financial/:id` | Administrator | Returns a saved report and its lesson details. |
 | `POST` | `/api/users/reports/financial` | Administrator | Generates and persists a report for a month and year. |
+| `POST` | `/api/lesson-issues` | Student, tutor | Reports a problem with a lesson the user participates in. |
+| `GET` | `/api/lesson-issues/mine` | Student, tutor | Lists the current user's reports. |
+| `GET` | `/api/lesson-issues/admin` | Administrator | Lists and filters lesson issue reports. |
+| `PATCH` | `/api/lesson-issues/admin/:id` | Administrator | Updates a report status and sends the reporter a notification. |
 
-Password reset is intentionally not exposed until a verified email-delivery
-flow is configured.
+Deleting a tutor with lesson, review, grade, request, or reported-issue history
+archives the account by blocking it and revoking existing sessions. The
+historical records remain intact. Tutors without linked history can be deleted.
+
+Password recovery requires SMTP configuration. Add these values to `.env`:
+
+```env
+SMTP_HOST="smtp.example.com"
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER="studyflow@example.com"
+SMTP_PASSWORD="your-smtp-password"
+SMTP_FROM="StudyFlow <studyflow@example.com>"
+FRONTEND_URL="http://localhost:5173"
+```
+
+Password reset links expire after 30 minutes and can be used once. Keep SMTP
+credentials out of source control.
+
+## Database backups
+
+Use the SQLite backup API to create a consistent backup while the API is
+running:
+
+```powershell
+npm run db:backup
+npm run db:backup -- "D:\backups\studyflow.sqlite"
+```
+
+Validate a backup before restoring it. Restore requires the API to be stopped;
+the command also creates a timestamped backup of the current database before
+replacing it:
+
+```powershell
+npm run db:restore -- "D:\backups\studyflow.sqlite" --confirm
+```
+
+Restore validates SQLite integrity and required application tables, preserves
+the current database under `prisma/backups`, and rolls back the file swap if
+replacement fails. Restart the API and run `npx prisma migrate deploy` after
+restoring a backup from an older application version.
+
+The monthly-grade uniqueness migration archives duplicate historical rows in
+`monthly_grades_dedup_archive` before enforcing one grade per student,
+subject, and month.
+
+## Add demo records without resetting the database
+
+The expanded demo dataset adds subjects, tutor and student accounts, past and
+upcoming lessons, bookings, attendance, grades, reviews, availability,
+financial reports, and example administrator requests/issues. It is
+development-only and idempotent; it does not delete existing data.
+
+Run it from `studyflow-backend` in PowerShell:
+
+```powershell
+$env:SEED_DEMO_APPEND = "true"
+npm run db:populate-demo
+Remove-Item Env:SEED_DEMO_APPEND
+```
+
+The generated local accounts use the demo password `haslo123`. Do not use
+these accounts or password in production. The script refuses production and
+non-SQLite databases and records a marker so repeated runs do not duplicate
+the dataset. The base reset seed also creates `admin@studyflow.pl`,
+`tutor@studyflow.pl`, `dariusz@studyflow.pl`, `student@studyflow.pl`, and
+`anna@studyflow.pl` with the same local-only password.
 
 ## Validation
 

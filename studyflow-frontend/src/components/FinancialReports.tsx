@@ -1,7 +1,14 @@
 import axios from "axios";
-import { BarChart3, Download, FilePlus2, RefreshCw } from "lucide-react";
+import {
+  BarChart3,
+  Download,
+  FilePlus2,
+  Printer,
+  RefreshCw,
+} from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import api from "../api/axios";
+import { downloadCsv } from "../utils/csv";
 
 interface ReportDetail {
   lesson_id: number;
@@ -52,8 +59,8 @@ function formatMonth(month: number, year: number): string {
   }).format(new Date(Date.UTC(year, month - 1, 1)));
 }
 
-function csvValue(value: string | number): string {
-  return `"${String(value).replaceAll('"', '""')}"`;
+function formatCurrency(value: number | string): string {
+  return `${Number(value).toFixed(2)} zł`;
 }
 
 function downloadReport(report: FinancialReport) {
@@ -84,18 +91,10 @@ function downloadReport(report: FinancialReport) {
     detail.student_cost,
     detail.tutor_salary,
   ]);
-  const csv = [columns, ...rows]
-    .map((row) => row.map(csvValue).join(";"))
-    .join("\r\n");
-  const blob = new Blob(["\uFEFF", csv], {
-    type: "text/csv;charset=utf-8",
-  });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `raport-finansowy-${report.year}-${String(report.month).padStart(2, "0")}.csv`;
-  anchor.click();
-  URL.revokeObjectURL(url);
+  downloadCsv(
+    `raport-finansowy-${report.year}-${String(report.month).padStart(2, "0")}.csv`,
+    [columns, ...rows],
+  );
 }
 
 export function FinancialReports() {
@@ -104,6 +103,10 @@ export function FinancialReports() {
   const [currentReport, setCurrentReport] = useState<FinancialReport | null>(
     null,
   );
+  const [comparisonIds, setComparisonIds] = useState<[string, string]>([
+    "",
+    "",
+  ]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -237,8 +240,148 @@ export function FinancialReports() {
         </p>
       )}
 
+      {reports.length >= 2 && (
+        <section className="space-y-4 rounded-2xl border border-brand-cardBorder bg-brand-card p-5">
+          <h3 className="text-lg font-bold">Porównanie raportów</h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {[0, 1].map((index) => (
+              <label
+                key={index}
+                className="space-y-2 text-sm text-brand-textMuted"
+              >
+                {index === 0 ? "Okres bazowy" : "Porównaj z"}
+                <select
+                  value={comparisonIds[index]}
+                  onChange={(event) =>
+                    setComparisonIds((previous) => {
+                      const next: [string, string] = [...previous];
+                      next[index] = event.target.value;
+                      return next;
+                    })
+                  }
+                  className="block w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2 text-white"
+                >
+                  <option value="">Wybierz raport</option>
+                  {reports.map((report) => (
+                    <option
+                      key={report.id_financial_reports}
+                      value={report.id_financial_reports}
+                    >
+                      {formatMonth(report.month, report.year)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+          {comparisonIds[0] &&
+            comparisonIds[1] &&
+            comparisonIds[0] !== comparisonIds[1] &&
+            (() => {
+              const base = reports.find(
+                (report) =>
+                  report.id_financial_reports === Number(comparisonIds[0]),
+              );
+              const compared = reports.find(
+                (report) =>
+                  report.id_financial_reports === Number(comparisonIds[1]),
+              );
+              if (!base || !compared) return null;
+              const metrics = [
+                {
+                  label: "Koszty uczniów",
+                  base: Number(base.total_student_cost),
+                  compared: Number(compared.total_student_cost),
+                },
+                {
+                  label: "Wynagrodzenia korepetytorów",
+                  base: Number(base.total_tutor_salary),
+                  compared: Number(compared.total_tutor_salary),
+                },
+                {
+                  label: "Zakończone lekcje",
+                  base:
+                    base.lesson_count ??
+                    new Set(base.details?.map((detail) => detail.lesson_id))
+                      .size,
+                  compared:
+                    compared.lesson_count ??
+                    new Set(compared.details?.map((detail) => detail.lesson_id))
+                      .size,
+                },
+              ];
+              return (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[36rem] text-left text-sm">
+                    <thead className="text-brand-textMuted">
+                      <tr>
+                        <th className="p-3">Wskaźnik</th>
+                        <th className="p-3">
+                          {formatMonth(base.month, base.year)}
+                        </th>
+                        <th className="p-3">
+                          {formatMonth(compared.month, compared.year)}
+                        </th>
+                        <th className="p-3">Różnica</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {metrics.map((metric, index) => (
+                        <tr
+                          key={metric.label}
+                          className="border-t border-brand-cardBorder"
+                        >
+                          <th className="p-3 font-medium">{metric.label}</th>
+                          <td className="p-3">
+                            {index < 2
+                              ? formatCurrency(metric.base)
+                              : metric.base}
+                          </td>
+                          <td className="p-3">
+                            {index < 2
+                              ? formatCurrency(metric.compared)
+                              : metric.compared}
+                          </td>
+                          <td className="p-3 font-semibold text-brand-yellow">
+                            {index < 2
+                              ? formatCurrency(metric.compared - metric.base)
+                              : metric.compared - metric.base}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+        </section>
+      )}
+
       {currentReport && (
-        <article className="space-y-4 rounded-2xl border border-brand-yellow/40 bg-brand-card p-6">
+        <article
+          id="financial-report-print"
+          className="financial-report-print space-y-4 rounded-2xl border border-brand-yellow/40 bg-brand-card p-6"
+        >
+          <style>{`
+            @media print {
+              body * { visibility: hidden !important; }
+              #financial-report-print, #financial-report-print * { visibility: visible !important; }
+              #financial-report-print {
+                position: absolute;
+                inset: 0;
+                width: 100%;
+                color: #111 !important;
+                background: #fff !important;
+                border: 0 !important;
+              }
+              #financial-report-print * {
+                color: #111 !important;
+                background: transparent !important;
+                border-color: #bbb !important;
+              }
+              #financial-report-print button { display: none !important; }
+            }
+          `}</style>
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h3 className="text-lg font-bold capitalize">
@@ -251,10 +394,18 @@ export function FinancialReports() {
             <button
               type="button"
               onClick={() => downloadReport(currentReport)}
-              className="inline-flex items-center gap-2 rounded-lg bg-brand-yellow px-4 py-2.5 text-sm font-semibold text-brand-black transition hover:bg-brand-yellowHover"
+              className="financial-report-screen-only inline-flex items-center gap-2 rounded-lg bg-brand-yellow px-4 py-2.5 text-sm font-semibold text-brand-black transition hover:bg-brand-yellowHover print:hidden"
             >
               <Download className="size-4" aria-hidden="true" />
               Pobierz CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="financial-report-screen-only inline-flex items-center gap-2 rounded-lg border border-brand-cardBorder px-4 py-2.5 text-sm font-semibold text-brand-yellow hover:border-brand-yellow print:hidden"
+            >
+              <Printer className="size-4" aria-hidden="true" />
+              Drukuj / Zapisz PDF
             </button>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -270,6 +421,37 @@ export function FinancialReports() {
                 {Number(currentReport.total_tutor_salary).toFixed(2)} zł
               </strong>
             </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[48rem] text-left text-sm">
+              <thead>
+                <tr className="border-b border-brand-cardBorder text-brand-textMuted">
+                  <th className="p-2">Data</th>
+                  <th className="p-2">Przedmiot</th>
+                  <th className="p-2">Korepetytor</th>
+                  <th className="p-2">Uczeń</th>
+                  <th className="p-2">Czas</th>
+                  <th className="p-2">Koszt</th>
+                  <th className="p-2">Wynagrodzenie</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(currentReport.details ?? []).map((detail, index) => (
+                  <tr
+                    key={`${detail.lesson_id}-${detail.student}-${index}`}
+                    className="border-b border-brand-cardBorder/60"
+                  >
+                    <td className="p-2">{detail.lesson_date}</td>
+                    <td className="p-2">{detail.subject}</td>
+                    <td className="p-2">{detail.tutor}</td>
+                    <td className="p-2">{detail.student}</td>
+                    <td className="p-2">{detail.duration_hours} h</td>
+                    <td className="p-2">{formatCurrency(detail.student_cost)}</td>
+                    <td className="p-2">{formatCurrency(detail.tutor_salary)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </article>
       )}

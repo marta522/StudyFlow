@@ -1,14 +1,18 @@
 import axios from "axios";
 import {
   CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Download,
   Pencil,
   Plus,
   RefreshCw,
   Search,
   Trash2,
 } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import api from "../api/axios";
+import { downloadCsv } from "../utils/csv";
 
 interface Subject {
   id_subjects: number;
@@ -23,6 +27,8 @@ interface ScheduleLesson {
   start_time: string;
   end_time: string;
   status: string;
+  cancelled_at: string | null;
+  cancelled_by_user: { first_name: string; last_name: string } | null;
   subject: Subject;
   tutor: { first_name: string; last_name: string };
   bookings: {
@@ -85,6 +91,22 @@ function formatDate(date: string): string {
   }).format(new Date(year, month - 1, day));
 }
 
+function dateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function mondayForDate(value: string): Date | null {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  const date = new Date(year, month - 1, day);
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+  return date;
+}
+
 export function AdminSchedule() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [offeredSubjects, setOfferedSubjects] = useState<ManagedSubject[]>([]);
@@ -96,16 +118,101 @@ export function AdminSchedule() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [subjectId, setSubjectId] = useState("");
+  const [tutorId, setTutorId] = useState("");
+  const [studentId, setStudentId] = useState("");
   const [userSearch, setUserSearch] = useState("");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [scheduleView, setScheduleView] = useState<"list" | "week">("list");
+  const [weekStart, setWeekStart] = useState(() => {
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+    return date;
+  });
+  const [todayKey] = useState(() => dateKey(new Date()));
+  const [selectedLesson, setSelectedLesson] = useState<ScheduleLesson | null>(
+    null,
+  );
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const dialogTitleRef = useRef<HTMLHeadingElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const filteredLessons = lessons.filter(
+    (lesson) => !statusFilter || lesson.status === statusFilter,
+  );
+  const sortedLessons = [...filteredLessons].sort((left, right) => {
+    const dateComparison =
+      left.lesson_date.localeCompare(right.lesson_date) ||
+      left.start_time.localeCompare(right.start_time);
+    return sortOrder === "asc" ? dateComparison : -dateComparison;
+  });
+  const conflictingLessonIds = new Set<number>();
+  for (let leftIndex = 0; leftIndex < sortedLessons.length; leftIndex += 1) {
+    const left = sortedLessons[leftIndex];
+    if (left.status !== "SCHEDULED") continue;
+    for (let rightIndex = leftIndex + 1; rightIndex < sortedLessons.length; rightIndex += 1) {
+      const right = sortedLessons[rightIndex];
+      if (right.status !== "SCHEDULED") continue;
+      if (left.lesson_date.slice(0, 10) !== right.lesson_date.slice(0, 10)) continue;
+      const overlaps =
+        left.start_time < right.end_time && right.start_time < left.end_time;
+      if (!overlaps) continue;
+      const sharedStudent = left.bookings.some(
+        (leftBooking) =>
+          leftBooking.status !== "CANCELLED" &&
+          right.bookings.some(
+            (rightBooking) =>
+              rightBooking.status !== "CANCELLED" &&
+              rightBooking.student.id_users === leftBooking.student.id_users,
+          ),
+      );
+      if (left.tutor_id === right.tutor_id || sharedStudent) {
+        conflictingLessonIds.add(left.id_lessons);
+        conflictingLessonIds.add(right.id_lessons);
+      }
+    }
+  }
+  const isDialogOpen = selectedLesson !== null;
 
-  async function searchLessons(params: Record<string, string> = {}) {
+  function openLessonDetails(lesson: ScheduleLesson) {
+    previousFocusRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    setSelectedLesson(lesson);
+  }
+
+  function closeLessonDetails() {
+    setSelectedLesson(null);
+  }
+
+  useEffect(() => {
+    if (!isDialogOpen) return;
+    const previousFocus = previousFocusRef.current;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelectedLesson(null);
+    };
+    document.addEventListener("keydown", handleEscape);
+    dialogTitleRef.current?.focus();
+    return () => {
+      document.removeEventListener("keydown", handleEscape);
+      previousFocus?.focus();
+    };
+  }, [isDialogOpen]);
+
+  async function searchLessons(
+    params: Record<string, string> = {},
+    includeStatus = true,
+  ) {
     setLoading(true);
     setError(null);
     try {
       const { data } = await api.get<ScheduleLesson[]>("/bookings/schedule", {
-        params,
+        params: {
+          ...params,
+          ...(includeStatus && statusFilter && { status: statusFilter }),
+        },
       });
       setLessons(data);
     } catch (requestError: unknown) {
@@ -151,16 +258,26 @@ export function AdminSchedule() {
 
   function handleSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (from && to && from > to) {
+      setError("Data początkowa nie może być późniejsza od daty końcowej.");
+      return;
+    }
     const params: Record<string, string> = {};
     if (from) params.from = from;
     if (to) params.to = to;
     if (subjectId) params.subject_id = subjectId;
+    if (tutorId) params.tutor_id = tutorId;
+    if (studentId) params.student_id = studentId;
     if (userSearch.trim()) params.user = userSearch.trim();
     void searchLessons(params);
   }
 
   async function handleSaveLesson(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (lessonForm.start_time >= lessonForm.end_time) {
+      setError("Godzina zakończenia musi być późniejsza niż rozpoczęcia.");
+      return;
+    }
     setSavingLesson(true);
     setError(null);
     try {
@@ -202,7 +319,15 @@ export function AdminSchedule() {
   }
 
   async function cancelLesson(lessonId: number) {
-    if (!window.confirm("Anulować tę lekcję i powiązane rezerwacje?")) return;
+    const lesson = lessons.find((item) => item.id_lessons === lessonId);
+    const students = lesson?.bookings
+      .filter((booking) => booking.status !== "CANCELLED")
+      .map(({ student }) => `${student.first_name} ${student.last_name}`)
+      .join(", ");
+    const message = students
+      ? `Odwołać lekcję ${lesson?.subject.name} dla ${students}?\n\nWszyscy uczniowie i korepetytor otrzymają powiadomienie, a powiązane rezerwacje zostaną anulowane.`
+      : `Odwołać wolny termin ${lesson?.subject.name}?\n\nKorepetytor otrzyma powiadomienie.`;
+    if (!window.confirm(message)) return;
     setError(null);
     try {
       await api.delete(`/bookings/admin/lessons/${lessonId}`);
@@ -210,6 +335,26 @@ export function AdminSchedule() {
     } catch (requestError: unknown) {
       setError(getErrorMessage(requestError));
     }
+  }
+
+  function exportSchedule() {
+    const rows = [
+      ["Data", "Od", "Do", "Przedmiot", "Korepetytor", "Uczeń", "Status", "Konflikt"],
+      ...sortedLessons.map((lesson) => [
+        lesson.lesson_date.slice(0, 10),
+        lesson.start_time,
+        lesson.end_time,
+        lesson.subject.name,
+        `${lesson.tutor.first_name} ${lesson.tutor.last_name}`,
+        lesson.bookings
+          .filter((booking) => booking.status !== "CANCELLED")
+          .map(({ student }) => `${student.first_name} ${student.last_name}`)
+          .join(", "),
+        lesson.status,
+        conflictingLessonIds.has(lesson.id_lessons) ? "Tak" : "Nie",
+      ]),
+    ];
+    downloadCsv(`harmonogram-studyflow-${dateKey(new Date())}.csv`, rows);
   }
 
   return (
@@ -393,6 +538,7 @@ export function AdminSchedule() {
           <input
             type="date"
             value={from}
+            max={to || undefined}
             onChange={(event) => setFrom(event.target.value)}
             className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2 text-white"
           />
@@ -402,6 +548,7 @@ export function AdminSchedule() {
           <input
             type="date"
             value={to}
+            min={from || undefined}
             onChange={(event) => setTo(event.target.value)}
             className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2 text-white"
           />
@@ -422,6 +569,40 @@ export function AdminSchedule() {
           </select>
         </label>
         <label className="space-y-2 text-sm text-brand-textMuted">
+          Korepetytor
+          <select
+            value={tutorId}
+            onChange={(event) => setTutorId(event.target.value)}
+            className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2 text-white"
+          >
+            <option value="">Wszyscy korepetytorzy</option>
+            {users
+              .filter((user) => user.role.name === "tutor")
+              .map((user) => (
+                <option key={user.id_users} value={user.id_users}>
+                  {user.first_name} {user.last_name}
+                </option>
+              ))}
+          </select>
+        </label>
+        <label className="space-y-2 text-sm text-brand-textMuted">
+          Uczeń
+          <select
+            value={studentId}
+            onChange={(event) => setStudentId(event.target.value)}
+            className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2 text-white"
+          >
+            <option value="">Wszyscy uczniowie</option>
+            {users
+              .filter((user) => user.role.name === "student")
+              .map((user) => (
+                <option key={user.id_users} value={user.id_users}>
+                  {user.first_name} {user.last_name}
+                </option>
+              ))}
+          </select>
+        </label>
+        <label className="space-y-2 text-sm text-brand-textMuted">
           Uczeń lub korepetytor
           <input
             minLength={2}
@@ -430,7 +611,132 @@ export function AdminSchedule() {
             className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2 text-white"
           />
         </label>
-        <div className="flex gap-3 sm:col-span-2 xl:col-span-4">
+        <label className="space-y-2 text-sm text-brand-textMuted">
+          Sortowanie po dacie
+          <select
+            value={sortOrder}
+            onChange={(event) =>
+              setSortOrder(event.target.value === "desc" ? "desc" : "asc")
+            }
+            className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2 text-white"
+          >
+            <option value="asc">Od najwcześniejszych</option>
+            <option value="desc">Od najpóźniejszych</option>
+          </select>
+        </label>
+        <label className="space-y-2 text-sm text-brand-textMuted">
+          Status lekcji
+          <select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+            className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2 text-white"
+          >
+            <option value="">Wszystkie statusy</option>
+            <option value="SCHEDULED">Zaplanowana</option>
+            <option value="COMPLETED">Zakończona</option>
+            <option value="CANCELLED">Odwołana</option>
+          </select>
+        </label>
+        <div className="flex flex-wrap gap-3 sm:col-span-2 xl:col-span-4">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setScheduleView("list")}
+              aria-pressed={scheduleView === "list"}
+              className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
+                scheduleView === "list"
+                  ? "border-brand-yellow text-brand-yellow"
+                  : "border-brand-cardBorder text-brand-textMuted"
+              }`}
+            >
+              Lista
+            </button>
+            <button
+              type="button"
+              onClick={() => setScheduleView("week")}
+              aria-pressed={scheduleView === "week"}
+              className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
+                scheduleView === "week"
+                  ? "border-brand-yellow text-brand-yellow"
+                  : "border-brand-cardBorder text-brand-textMuted"
+              }`}
+            >
+              Tydzień
+            </button>
+          </div>
+          {scheduleView === "week" && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setWeekStart((date) => {
+                    const next = new Date(date);
+                    next.setDate(next.getDate() - 7);
+                    return next;
+                  })
+                }
+                aria-label="Poprzedni tydzień"
+                className="rounded-lg border border-brand-cardBorder p-2 text-brand-textMuted hover:border-brand-yellow hover:text-white"
+              >
+                <ChevronLeft className="size-4" aria-hidden="true" />
+              </button>
+              <span className="text-sm text-brand-textMuted">
+                {weekStart.toLocaleDateString("pl-PL", {
+                  day: "numeric",
+                  month: "short",
+                })}{" "}
+                –{" "}
+                {new Date(
+                  weekStart.getFullYear(),
+                  weekStart.getMonth(),
+                  weekStart.getDate() + 6,
+                ).toLocaleDateString("pl-PL", {
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                })}
+              </span>
+              <label className="sr-only" htmlFor="admin-schedule-week-date">
+                Przejdź do tygodnia zawierającego wybraną datę
+              </label>
+              <input
+                id="admin-schedule-week-date"
+                type="date"
+                value={dateKey(weekStart)}
+                onChange={(event) => {
+                  const monday = mondayForDate(event.target.value);
+                  if (monday) setWeekStart(monday);
+                }}
+                className="rounded-lg border border-brand-cardBorder bg-brand-black px-2 py-1.5 text-xs text-white"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const date = new Date();
+                  date.setHours(0, 0, 0, 0);
+                  date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+                  setWeekStart(date);
+                }}
+                className="rounded-lg border border-brand-cardBorder px-3 py-1.5 text-xs font-medium text-brand-yellow hover:border-brand-yellow"
+              >
+                Dzisiaj
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setWeekStart((date) => {
+                    const next = new Date(date);
+                    next.setDate(next.getDate() + 7);
+                    return next;
+                  })
+                }
+                aria-label="Następny tydzień"
+                className="rounded-lg border border-brand-cardBorder p-2 text-brand-textMuted hover:border-brand-yellow hover:text-white"
+              >
+                <ChevronRight className="size-4" aria-hidden="true" />
+              </button>
+            </div>
+          )}
           <button
             type="submit"
             disabled={loading}
@@ -441,7 +747,25 @@ export function AdminSchedule() {
           </button>
           <button
             type="button"
-            onClick={() => void searchLessons()}
+            onClick={exportSchedule}
+            disabled={sortedLessons.length === 0}
+            className="inline-flex items-center gap-2 rounded-lg border border-brand-cardBorder px-4 py-2.5 text-sm text-brand-textMuted transition hover:border-brand-yellow hover:text-brand-yellow disabled:opacity-50"
+          >
+            <Download className="size-4" aria-hidden="true" />
+            Eksport CSV
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setFrom("");
+              setTo("");
+              setSubjectId("");
+              setTutorId("");
+              setStudentId("");
+              setUserSearch("");
+              setStatusFilter("");
+              void searchLessons({}, false);
+            }}
             disabled={loading}
             className="inline-flex items-center gap-2 rounded-lg border border-brand-cardBorder px-4 py-2.5 text-sm text-brand-textMuted transition hover:border-brand-yellow hover:text-white disabled:opacity-50"
           >
@@ -466,10 +790,81 @@ export function AdminSchedule() {
         <p role="status" className="py-6 text-center text-brand-textMuted">
           Ładowanie harmonogramu…
         </p>
-      ) : !error && lessons.length === 0 ? (
+      ) : !error && sortedLessons.length === 0 ? (
         <p className="rounded-2xl border border-brand-cardBorder bg-brand-card p-8 text-center text-brand-textMuted">
           Brak zajęć spełniających wybrane kryteria.
         </p>
+      ) : scheduleView === "week" ? (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-7">
+            {Array.from({ length: 7 }, (_, index) => {
+              const day = new Date(weekStart);
+              day.setDate(day.getDate() + index);
+              const dayKey = dateKey(day);
+              const isToday = dayKey === todayKey;
+              const dayLessons = sortedLessons.filter(
+                (lesson) => lesson.lesson_date.slice(0, 10) === dayKey,
+              );
+              return (
+                <section
+                  key={dayKey}
+                  aria-label={formatDate(dayKey)}
+                  aria-current={isToday ? "date" : undefined}
+                  className={`min-h-36 rounded-xl border bg-brand-card p-3 ${
+                    isToday
+                      ? "border-brand-yellow ring-1 ring-brand-yellow/40"
+                      : "border-brand-cardBorder"
+                  }`}
+                >
+                  <h3 className="mb-3 text-xs font-semibold capitalize text-brand-yellow">
+                    {day.toLocaleDateString("pl-PL", {
+                      weekday: "short",
+                      day: "numeric",
+                      month: "short",
+                    })}
+                  </h3>
+                  <ul className="space-y-2">
+                    {dayLessons.map((lesson) => (
+                      <li key={lesson.id_lessons}>
+                        <button
+                          type="button"
+                          onClick={() => openLessonDetails(lesson)}
+                          className={`w-full rounded-lg border p-2 text-left text-xs ${
+                            lesson.status === "CANCELLED"
+                              ? "border-red-500/40 bg-red-500/10 text-red-200"
+                              : "border-brand-yellow/30 bg-brand-yellow/5 text-white"
+                          }`}
+                        >
+                          {lesson.start_time} {lesson.subject.name}
+                          {lesson.status === "CANCELLED" && (
+                            <span className="mt-1 block">Odwołana</span>
+                          )}
+                          {conflictingLessonIds.has(lesson.id_lessons) && (
+                            <span className="mt-1 block font-semibold text-red-300">
+                              Konflikt terminu
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              );
+            })}
+          </div>
+          {!sortedLessons.some((lesson) => {
+            const lessonDate = lesson.lesson_date.slice(0, 10);
+            const end = new Date(weekStart);
+            end.setDate(end.getDate() + 6);
+            const endKey = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")}`;
+            const startKey = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, "0")}-${String(weekStart.getDate()).padStart(2, "0")}`;
+            return lessonDate >= startKey && lessonDate <= endKey;
+          }) && (
+            <p className="rounded-xl border border-brand-cardBorder bg-brand-card p-4 text-sm text-brand-textMuted">
+              Brak lekcji w tym tygodniu.
+            </p>
+          )}
+        </>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-brand-cardBorder bg-brand-card">
           <table className="w-full min-w-[760px] text-left text-sm">
@@ -484,13 +879,24 @@ export function AdminSchedule() {
               </tr>
             </thead>
             <tbody className="divide-y divide-brand-cardBorder">
-              {lessons.map((lesson) => (
-                <tr key={lesson.id_lessons} className="hover:bg-brand-black/30">
+              {sortedLessons.map((lesson) => (
+                <tr
+                  key={lesson.id_lessons}
+                  className={`hover:bg-brand-black/30 ${
+                    lesson.status === "CANCELLED" ? "bg-red-500/5 text-red-200" : ""
+                  }`}
+                >
                   <td className="px-5 py-4">
-                    <p>{formatDate(lesson.lesson_date)}</p>
-                    <p className="mt-1 text-xs text-brand-textMuted">
-                      {lesson.start_time}–{lesson.end_time}
-                    </p>
+                    <button
+                      type="button"
+                      onClick={() => openLessonDetails(lesson)}
+                      className="text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-yellow"
+                    >
+                      <p>{formatDate(lesson.lesson_date)}</p>
+                      <p className="mt-1 text-xs text-brand-textMuted">
+                        {lesson.start_time}–{lesson.end_time}
+                      </p>
+                    </button>
                   </td>
                   <td className="px-5 py-4">{lesson.subject.name}</td>
                   <td className="px-5 py-4">
@@ -506,15 +912,26 @@ export function AdminSchedule() {
                           .join(", ")
                       : "Wolny termin"}
                   </td>
-                  <td className="px-5 py-4">{lesson.status}</td>
+                  <td className="px-5 py-4">
+                    {lesson.status === "CANCELLED"
+                      ? "Odwołana"
+                      : lesson.status === "COMPLETED"
+                        ? "Zakończona"
+                        : "Zaplanowana"}
+                    {conflictingLessonIds.has(lesson.id_lessons) && (
+                      <span
+                        className="ml-2 rounded-full border border-red-500/40 bg-red-500/10 px-2 py-1 text-[10px] font-semibold text-red-300"
+                        title="Nakłada się na inny termin tego korepetytora lub ucznia"
+                      >
+                        Konflikt
+                      </span>
+                    )}
+                  </td>
                   <td className="px-5 py-4">
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        disabled={
-                          lesson.status !== "SCHEDULED" ||
-                          lesson.bookings.length > 0
-                        }
+                        disabled={lesson.status !== "SCHEDULED"}
                         onClick={() => startEditing(lesson)}
                         aria-label={`Edytuj lekcję ${lesson.id_lessons}`}
                         className="rounded-lg border border-brand-cardBorder p-2 text-brand-yellow disabled:opacity-40"
@@ -536,6 +953,68 @@ export function AdminSchedule() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+      {selectedLesson && (
+        <div
+          className="fixed inset-0 z-[60] grid place-items-center bg-black/70 p-4"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeLessonDetails();
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-lesson-details-title"
+            className="w-full max-w-lg space-y-4 rounded-2xl border border-brand-cardBorder bg-brand-card p-6 shadow-2xl"
+          >
+            <h2
+              id="admin-lesson-details-title"
+              ref={dialogTitleRef}
+              tabIndex={-1}
+              className="text-xl font-bold text-white"
+            >
+              {selectedLesson.subject.name}
+            </h2>
+            <p className="text-sm text-brand-textMuted">
+              {formatDate(selectedLesson.lesson_date)} ·{" "}
+              {selectedLesson.start_time}–{selectedLesson.end_time}
+            </p>
+            <p className="text-sm text-brand-textMuted">
+              Korepetytor: {selectedLesson.tutor.first_name}{" "}
+              {selectedLesson.tutor.last_name}
+            </p>
+            <p className="text-sm text-brand-textMuted">
+              Uczniowie:{" "}
+              {selectedLesson.bookings.length > 0
+                ? selectedLesson.bookings
+                    .map(
+                      ({ student }) =>
+                        `${student.first_name} ${student.last_name}`,
+                    )
+                    .join(", ")
+                : "Wolny termin"}
+            </p>
+            <p className="text-sm text-brand-textMuted">
+              Status: {selectedLesson.status}
+            </p>
+            {selectedLesson.cancelled_at && (
+              <p className="text-sm text-red-300">
+                Odwołano{" "}
+                {new Date(selectedLesson.cancelled_at).toLocaleString("pl-PL")}
+                {selectedLesson.cancelled_by_user &&
+                  ` przez ${selectedLesson.cancelled_by_user.first_name} ${selectedLesson.cancelled_by_user.last_name}`}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={closeLessonDetails}
+              className="rounded-lg bg-brand-yellow px-4 py-2 font-semibold text-brand-black"
+            >
+              Zamknij
+            </button>
+          </section>
         </div>
       )}
     </section>

@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsString,
   Matches,
+  MaxLength,
   Min,
 } from 'class-validator';
 
@@ -38,5 +39,6 @@ export class CreateAdminLessonDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(5000)
   homework?: string;
 }

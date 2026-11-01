@@ -1,12 +1,39 @@
+import { lazy, Suspense, type ReactNode } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-import type { ReactNode } from "react";
 import { AuthProvider } from "./context/AuthContext";
 import { useAuth } from "./context/useAuth";
-import { DashboardPage } from "./pages/DashboardPage";
 import { LandingPage } from "./pages/LandingPage";
-import { LoginPage } from "./pages/LoginPage";
-import { RegisterPage } from "./pages/RegisterPage";
-import { TutorSearch } from "./components/TutorSearch";
+
+const DashboardPage = lazy(() =>
+  import("./pages/DashboardPage").then((module) => ({
+    default: module.DashboardPage,
+  })),
+);
+const LoginPage = lazy(() =>
+  import("./pages/LoginPage").then((module) => ({
+    default: module.LoginPage,
+  })),
+);
+const RegisterPage = lazy(() =>
+  import("./pages/RegisterPage").then((module) => ({
+    default: module.RegisterPage,
+  })),
+);
+const PasswordRecoveryPage = lazy(() =>
+  import("./pages/PasswordRecoveryPage").then((module) => ({
+    default: module.PasswordRecoveryPage,
+  })),
+);
+const ResetPasswordPage = lazy(() =>
+  import("./pages/ResetPasswordPage").then((module) => ({
+    default: module.ResetPasswordPage,
+  })),
+);
+const TutorSearch = lazy(() =>
+  import("./components/TutorSearch").then((module) => ({
+    default: module.TutorSearch,
+  })),
+);
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { token, user, loading, authError, logout } = useAuth();
@@ -52,39 +79,51 @@ function AppRoutes() {
   const { token, user, loading } = useAuth();
 
   return (
-    <Routes>
-      <Route path="/" element={<LandingPage />} />
-      <Route path="/tutors" element={<TutorSearch />} />
-      <Route
-        path="/login"
-        element={
-          !loading && token && user ? (
-            <Navigate to="/dashboard" replace />
-          ) : (
-            <LoginPage />
-          )
-        }
-      />
-      <Route
-        path="/register"
-        element={
-          !loading && token && user ? (
-            <Navigate to="/dashboard" replace />
-          ) : (
-            <RegisterPage />
-          )
-        }
-      />
-      <Route
-        path="/dashboard"
-        element={
-          <ProtectedRoute>
-            <DashboardPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-brand-black text-white">
+          <p role="status" className="text-brand-textMuted">
+            Ładowanie strony…
+          </p>
+        </main>
+      }
+    >
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/tutors" element={<TutorSearch />} />
+        <Route
+          path="/login"
+          element={
+            !loading && token && user ? (
+              <Navigate to="/dashboard" replace />
+            ) : (
+              <LoginPage />
+            )
+          }
+        />
+        <Route
+          path="/register"
+          element={
+            !loading && token && user ? (
+              <Navigate to="/dashboard" replace />
+            ) : (
+              <RegisterPage />
+            )
+          }
+        />
+        <Route path="/forgot-password" element={<PasswordRecoveryPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <DashboardPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   );
 }
 

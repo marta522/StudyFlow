@@ -201,12 +201,31 @@ export class SubjectsService {
       );
     }
 
-    return this.prisma.subjectRequest.create({
-      data: {
-        tutor_id: tutorId,
-        subject_name: dto.subject_name,
-        description: dto.description,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const request = await tx.subjectRequest.create({
+        data: {
+          tutor_id: tutorId,
+          subject_name: dto.subject_name,
+          description: dto.description,
+        },
+      });
+      const admins = await tx.user.findMany({
+        where: { role: { name: 'admin' }, status: 'ACTIVE' },
+        select: { id_users: true },
+      });
+      await Promise.all(
+        admins.map((admin) =>
+          tx.notification.create({
+            data: {
+              user_id: admin.id_users,
+              title: 'Nowe zgłoszenie przedmiotu',
+              message: `Korepetytor zgłosił przedmiot „${request.subject_name}”. Zgłoszenie oczekuje na rozpatrzenie.`,
+              type: 'ADMIN_SUBJECT_REQUEST',
+            },
+          }),
+        ),
+      );
+      return request;
     });
   }
 
@@ -223,6 +242,20 @@ export class SubjectsService {
         },
       },
       orderBy: { created_at: 'asc' },
+    });
+  }
+
+  async getTutorSubjectRequests(tutorId: number) {
+    return this.prisma.subjectRequest.findMany({
+      where: { tutor_id: tutorId },
+      orderBy: { created_at: 'desc' },
+      select: {
+        id_subject_requests: true,
+        subject_name: true,
+        description: true,
+        status: true,
+        created_at: true,
+      },
     });
   }
 
@@ -282,7 +315,7 @@ export class SubjectsService {
             subjectId = subject.id_subjects;
           }
 
-          return tx.subjectRequest.update({
+          const reviewedRequest = await tx.subjectRequest.update({
             where: { id_subject_requests: requestId },
             data: {
               status,
@@ -301,6 +334,34 @@ export class SubjectsService {
               subject: true,
             },
           });
+          await tx.notification.create({
+            data: {
+              user_id: request.tutor_id,
+              title: 'Zaktualizowano zgłoszenie przedmiotu',
+              message: `Zgłoszenie przedmiotu „${request.subject_name}” zostało ${
+                status === RequestStatus.APPROVED
+                  ? 'zaakceptowane'
+                  : 'odrzucone'
+              }.`,
+              type: 'SUBJECT_REQUEST',
+            },
+          });
+          await tx.adminAuditLog.create({
+            data: {
+              actor_id: reviewerId,
+              action:
+                status === RequestStatus.APPROVED
+                  ? 'SUBJECT_REQUEST_APPROVED'
+                  : 'SUBJECT_REQUEST_REJECTED',
+              entity_type: 'subject_request',
+              entity_id: requestId,
+              details: JSON.stringify({
+                subjectName: request.subject_name,
+                tutorId: request.tutor_id,
+              }),
+            },
+          });
+          return reviewedRequest;
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );

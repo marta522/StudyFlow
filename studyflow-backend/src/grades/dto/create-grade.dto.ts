@@ -5,26 +5,14 @@ import {
   IsOptional,
   IsString,
   Max,
+  MaxLength,
   Min,
 } from 'class-validator';
 
 export class CreateGradeDto {
   @IsInt()
   @Min(1)
-  student_id: number;
-
-  @IsInt()
-  @Min(1)
-  subject_id: number;
-
-  @IsInt()
-  @Min(1)
-  @Max(12)
-  month: number;
-
-  @IsInt()
-  @Min(1)
-  year: number;
+  lesson_id: number;
 
   @IsNumber({ maxDecimalPlaces: 2 })
   @IsNotEmpty()
@@ -34,5 +22,6 @@ export class CreateGradeDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(5000)
   comment?: string;
 }

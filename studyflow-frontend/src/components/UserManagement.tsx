@@ -1,5 +1,7 @@
 import axios from "axios";
 import {
+  Activity,
+  Download,
   Mail,
   Pencil,
   Phone,
@@ -14,7 +16,9 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Fragment } from "react";
 import api from "../api/axios";
+import { downloadCsv } from "../utils/csv";
 
 type UserStatus = "ACTIVE" | "BLOCKED";
 type UserRole = "student" | "tutor";
@@ -28,6 +32,44 @@ interface UserItem {
   phone: string | null;
   status: UserStatus;
   role: { name: UserRole };
+}
+
+interface UserActivity {
+  user: {
+    created_at: string;
+    bookings_as_student: {
+      lesson: {
+        id_lessons: number;
+        lesson_date: string;
+        start_time: string;
+        end_time: string;
+        status: string;
+        subject: { name: string };
+        tutor: { first_name: string; last_name: string };
+      };
+    }[];
+    lessons_as_tutor: {
+      id_lessons: number;
+      lesson_date: string;
+      start_time: string;
+      end_time: string;
+      status: string;
+      subject: { name: string };
+    }[];
+  };
+  bookingCount: number;
+  tutoringLessonCount: number;
+  reviewCount: number;
+  gradeCount: number;
+  auditEvents: {
+    id_admin_audit_logs: number;
+    action: string;
+    entity_type: string;
+    entity_id: number | null;
+    details: string;
+    created_at: string;
+    actor: { first_name: string; last_name: string } | null;
+  }[];
 }
 
 interface ApiError {
@@ -44,6 +86,43 @@ function getErrorMessage(error: unknown, fallback: string): string {
     }
   }
   return fallback;
+}
+
+function formatLessonStatus(status: string): string {
+  switch (status) {
+    case "SCHEDULED":
+      return "Zaplanowana";
+    case "COMPLETED":
+      return "Zakończona";
+    case "CANCELLED":
+      return "Odwołana";
+    default:
+      return "Status nieznany";
+  }
+}
+
+function formatActivityAction(action: string): string {
+  const actionLabels: Record<string, string> = {
+    USER_CREATED: "Utworzono konto użytkownika",
+    USER_UPDATED: "Zmieniono dane konta",
+    USER_DETAILS_UPDATED: "Zmieniono dane konta",
+    USER_BLOCKED: "Zablokowano konto",
+    USER_UNBLOCKED: "Odblokowano konto",
+    TUTOR_ARCHIVED: "Zarchiwizowano konto korepetytora",
+    TUTOR_DELETED: "Usunięto konto korepetytora",
+    LESSON_CREATED: "Dodano termin lekcji",
+    LESSON_UPDATED: "Zmieniono termin lekcji",
+    LESSON_CANCELLED: "Odwołano lekcję",
+    LESSON_DELETED: "Usunięto termin lekcji",
+    LESSON_ISSUE_UPDATED: "Zaktualizowano zgłoszenie dotyczące lekcji",
+    SUBJECT_REQUEST_APPROVED: "Zaakceptowano zgłoszenie przedmiotu",
+    SUBJECT_REQUEST_REJECTED: "Odrzucono zgłoszenie przedmiotu",
+    FINANCIAL_REPORT_GENERATED: "Wygenerowano raport finansowy",
+  };
+  return (
+    actionLabels[action] ??
+    `Inne działanie: ${action.replace(/_/g, " ").toLowerCase()}`
+  );
 }
 
 export function UserManagement() {
@@ -65,11 +144,15 @@ export function UserManagement() {
     phone: "",
   });
   const [editingUserId, setEditingUserId] = useState<number | null>(null);
+  const [expandedActivityId, setExpandedActivityId] = useState<number | null>(null);
+  const [activity, setActivity] = useState<UserActivity | null>(null);
+  const [activityLoading, setActivityLoading] = useState(false);
   const [editForm, setEditForm] = useState({
     first_name: "",
     last_name: "",
     email: "",
     phone: "",
+    role: "student" as UserRole,
   });
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -102,6 +185,39 @@ export function UserManagement() {
     };
   }, []);
 
+  useEffect(() => {
+    if (expandedActivityId === null) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setExpandedActivityId(null);
+        setActivity(null);
+        document
+          .getElementById(`user-activity-toggle-${expandedActivityId}`)
+          ?.focus();
+      }
+    }
+
+    function handleOutsideClick(event: PointerEvent) {
+      if (
+        event.target instanceof Element &&
+        !event.target.closest(
+          `[data-user-activity-id="${expandedActivityId}"]`,
+        )
+      ) {
+        setExpandedActivityId(null);
+        setActivity(null);
+      }
+    }
+
+    document.addEventListener("pointerdown", handleOutsideClick);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handleOutsideClick);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [expandedActivityId]);
+
   function beginEdit(user: UserItem) {
     setEditingUserId(user.id_users);
     setEditForm({
@@ -109,6 +225,7 @@ export function UserManagement() {
       last_name: user.last_name,
       email: user.email,
       phone: user.phone ?? "",
+      role: user.role.name,
     });
     setError(null);
   }
@@ -116,6 +233,18 @@ export function UserManagement() {
   async function saveUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (editingUserId === null) return;
+    const currentUser = users.find((user) => user.id_users === editingUserId);
+    if (
+      currentUser &&
+      currentUser.role.name !== editForm.role &&
+      !window.confirm(
+        `Zmienić rolę ${currentUser.first_name} ${currentUser.last_name} na ${
+          editForm.role === "tutor" ? "korepetytora" : "ucznia"
+        }? Zmiana jest możliwa tylko wtedy, gdy konto nie ma historii zajęć.`,
+      )
+    ) {
+      return;
+    }
 
     setSaving(true);
     setError(null);
@@ -175,7 +304,7 @@ export function UserManagement() {
   async function deleteTutor(user: UserItem) {
     if (
       !window.confirm(
-        `Czy na pewno usunąć konto ${user.first_name} ${user.last_name}?`,
+        `Usunąć konto korepetytora ${user.first_name} ${user.last_name}?\n\nJeśli konto ma historię lekcji, opinii lub zgłoszeń, zostanie zablokowane, a historia zachowana. Konto bez historii zostanie trwale usunięte.`,
       )
     ) {
       return;
@@ -184,11 +313,26 @@ export function UserManagement() {
     setError(null);
     setNotice(null);
     try {
-      await api.delete(`/users/${user.id_users}`);
-      setUsers((previous) =>
-        previous.filter((item) => item.id_users !== user.id_users),
+      const { data } = await api.delete<UserItem & { archived?: boolean }>(
+        `/users/${user.id_users}`,
       );
-      setNotice("Konto korepetytora zostało usunięte.");
+      if (data.archived) {
+        setUsers((previous) =>
+          previous.map((item) =>
+            item.id_users === user.id_users
+              ? { ...item, status: "BLOCKED" }
+              : item,
+          ),
+        );
+        setNotice(
+          "Konto zostało zablokowane, a historia zajęć i zgłoszeń zachowana.",
+        );
+      } else {
+        setUsers((previous) =>
+          previous.filter((item) => item.id_users !== user.id_users),
+        );
+        setNotice("Konto korepetytora bez historii zostało usunięte.");
+      }
     } catch (requestError: unknown) {
       setError(
         getErrorMessage(
@@ -203,6 +347,14 @@ export function UserManagement() {
 
   async function toggleUserStatus(user: UserItem) {
     const status: UserStatus = user.status === "ACTIVE" ? "BLOCKED" : "ACTIVE";
+    if (
+      status === "BLOCKED" &&
+      !window.confirm(
+        `Zablokować konto ${user.first_name} ${user.last_name}? Użytkownik utraci dostęp do konta.`,
+      )
+    ) {
+      return;
+    }
     setUpdatingStatusId(user.id_users);
     setError(null);
     setNotice(null);
@@ -231,6 +383,31 @@ export function UserManagement() {
     }
   }
 
+  async function toggleActivity(userId: number) {
+    if (expandedActivityId === userId) {
+      setExpandedActivityId(null);
+      setActivity(null);
+      return;
+    }
+    setExpandedActivityId(userId);
+    setActivity(null);
+    setActivityLoading(true);
+    try {
+      const { data } = await api.get<UserActivity>(`/users/${userId}/activity`);
+      setActivity(data);
+    } catch (requestError: unknown) {
+      setError(
+        getErrorMessage(
+          requestError,
+          "Nie udało się pobrać aktywności użytkownika.",
+        ),
+      );
+      setExpandedActivityId(null);
+    } finally {
+      setActivityLoading(false);
+    }
+  }
+
   async function refreshUsers() {
     setLoading(true);
     setError(null);
@@ -241,6 +418,21 @@ export function UserManagement() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function exportUsers() {
+    const rows = [
+      ["Imię", "Nazwisko", "Email", "Telefon", "Rola", "Status"],
+      ...filteredUsers.map((user) => [
+        user.first_name,
+        user.last_name,
+        user.email,
+        user.phone ?? "",
+        user.role.name,
+        user.status,
+      ]),
+    ];
+    downloadCsv("uzytkownicy-studyflow.csv", rows);
   }
 
   const filteredUsers = users.filter(
@@ -306,6 +498,15 @@ export function UserManagement() {
           >
             <Plus className="size-4" aria-hidden="true" />
             Dodaj użytkownika
+          </button>
+          <button
+            type="button"
+            onClick={exportUsers}
+            disabled={filteredUsers.length === 0}
+            className="inline-flex items-center gap-2 rounded-lg border border-brand-cardBorder px-3 py-2 text-sm text-brand-textMuted transition hover:border-brand-yellow hover:text-brand-yellow disabled:opacity-50"
+          >
+            <Download className="size-4" aria-hidden="true" />
+            Eksport CSV
           </button>
           <button
             type="button"
@@ -467,8 +668,9 @@ export function UserManagement() {
             </thead>
             <tbody className="divide-y divide-brand-cardBorder">
               {filteredUsers.map((user) => (
+                <Fragment key={user.id_users}>
                 <tr
-                  key={user.id_users}
+                  data-user-activity-id={user.id_users}
                   className="align-top hover:bg-brand-black/30"
                 >
                   <td className="px-5 py-4">
@@ -577,13 +779,31 @@ export function UserManagement() {
                     )}
                   </td>
                   <td className="px-5 py-4">
-                    <span className="inline-flex items-center gap-1 rounded-full border border-brand-cardBorder bg-brand-black px-2.5 py-1 text-xs capitalize">
-                      <Shield
-                        className="size-3.5 text-brand-yellow"
-                        aria-hidden="true"
-                      />
-                      {user.role.name}
-                    </span>
+                    {editingUserId === user.id_users ? (
+                      <select
+                        form={`edit-user-${user.id_users}`}
+                        aria-label="Rola użytkownika"
+                        value={editForm.role}
+                        onChange={(event) =>
+                          setEditForm({
+                            ...editForm,
+                            role: event.target.value as UserRole,
+                          })
+                        }
+                        className="rounded border border-brand-cardBorder bg-brand-black px-2 py-1 text-xs text-white"
+                      >
+                        <option value="student">Uczeń</option>
+                        <option value="tutor">Korepetytor</option>
+                      </select>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-brand-cardBorder bg-brand-black px-2.5 py-1 text-xs capitalize">
+                        <Shield
+                          className="size-3.5 text-brand-yellow"
+                          aria-hidden="true"
+                        />
+                        {user.role.name}
+                      </span>
+                    )}
                   </td>
                   <td className="px-5 py-4">
                     <span
@@ -621,6 +841,18 @@ export function UserManagement() {
                         </>
                       ) : (
                         <>
+                          <button
+                            type="button"
+                            onClick={() => void toggleActivity(user.id_users)}
+                            id={`user-activity-toggle-${user.id_users}`}
+                            aria-expanded={expandedActivityId === user.id_users}
+                            aria-controls={`user-activity-${user.id_users}`}
+                            aria-label={`Pokaż aktywność ${user.first_name} ${user.last_name}`}
+                            className="inline-flex items-center gap-1 rounded-lg border border-brand-cardBorder px-3 py-2 text-xs transition hover:border-brand-yellow hover:text-brand-yellow"
+                          >
+                            <Activity className="size-3.5" aria-hidden="true" />
+                            Aktywność
+                          </button>
                           <button
                             type="button"
                             onClick={() => beginEdit(user)}
@@ -663,8 +895,8 @@ export function UserManagement() {
                               type="button"
                               onClick={() => void deleteTutor(user)}
                               disabled={deletingUserId === user.id_users}
-                              aria-label={`Usuń korepetytora ${user.first_name} ${user.last_name}`}
-                              title="Usuń korepetytora"
+                              aria-label={`Usuń lub zarchiwizuj korepetytora ${user.first_name} ${user.last_name}`}
+                              title="Usuń lub zarchiwizuj korepetytora"
                               className="rounded-lg border border-red-500/30 p-2 text-red-300 transition hover:bg-red-500/10 disabled:opacity-50"
                             >
                               <Trash2 className="size-4" aria-hidden="true" />
@@ -675,6 +907,174 @@ export function UserManagement() {
                     </div>
                   </td>
                 </tr>
+                {expandedActivityId === user.id_users && (
+                  <tr>
+                    <td
+                      data-user-activity-id={user.id_users}
+                      id={`user-activity-${user.id_users}`}
+                      colSpan={5}
+                      className="border-t border-brand-cardBorder bg-brand-black/40 px-5 py-4"
+                    >
+                      {activityLoading ? (
+                        <p role="status" className="text-sm text-brand-textMuted">
+                          Ładowanie aktywności…
+                        </p>
+                      ) : activity ? (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <h3 className="font-semibold text-white">
+                              Aktywność: {user.first_name} {user.last_name}
+                            </h3>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setExpandedActivityId(null);
+                                setActivity(null);
+                                document
+                                  .getElementById(
+                                    `user-activity-toggle-${user.id_users}`,
+                                  )
+                                  ?.focus();
+                              }}
+                              className="rounded-lg border border-brand-cardBorder px-3 py-1.5 text-xs text-brand-textMuted transition hover:border-brand-yellow hover:text-white"
+                            >
+                              Zamknij
+                            </button>
+                          </div>
+                          <div className="grid gap-2 text-sm sm:grid-cols-2 xl:grid-cols-3">
+                            <p className="rounded-lg bg-brand-black/60 px-3 py-2 text-brand-textMuted">
+                              Konto od{" "}
+                              <span className="font-semibold text-white">
+                                {new Date(activity.user.created_at).toLocaleDateString("pl-PL")}
+                              </span>
+                            </p>
+                            <p className="rounded-lg bg-brand-black/60 px-3 py-2 text-brand-textMuted">
+                              Rezerwacje ucznia:{" "}
+                              <span className="font-semibold text-white">{activity.bookingCount}</span>
+                            </p>
+                            <p className="rounded-lg bg-brand-black/60 px-3 py-2 text-brand-textMuted">
+                              Lekcje prowadzone:{" "}
+                              <span className="font-semibold text-white">{activity.tutoringLessonCount}</span>
+                            </p>
+                            <p className="rounded-lg bg-brand-black/60 px-3 py-2 text-brand-textMuted">
+                              Wystawione opinie:{" "}
+                              <span className="font-semibold text-white">{activity.reviewCount}</span>
+                            </p>
+                            <p className="rounded-lg bg-brand-black/60 px-3 py-2 text-brand-textMuted">
+                              Wystawione oceny:{" "}
+                              <span className="font-semibold text-white">{activity.gradeCount}</span>
+                            </p>
+                          </div>
+                          {activity.user.bookings_as_student.length > 0 && (
+                            <div>
+                              <h4 className="mb-1 text-sm font-semibold text-brand-yellow">
+                                Ostatnie rezerwacje ucznia
+                              </h4>
+                              <ul className="space-y-1 text-xs text-brand-textMuted">
+                                {activity.user.bookings_as_student.slice(0, 5).map((booking) => (
+                                  <li
+                                    key={booking.lesson.id_lessons}
+                                    className="rounded-lg bg-brand-black/60 px-3 py-2"
+                                  >
+                                    <span className="font-medium text-white">
+                                      {booking.lesson.subject.name}
+                                    </span>
+                                    {" · "}
+                                    {new Date(booking.lesson.lesson_date).toLocaleDateString("pl-PL")}
+                                    {` · ${booking.lesson.start_time}–${booking.lesson.end_time}`}
+                                    {` · korepetytor: ${booking.lesson.tutor.first_name} ${booking.lesson.tutor.last_name}`}
+                                    {` · ${formatLessonStatus(booking.lesson.status)}`}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {activity.user.lessons_as_tutor.length > 0 && (
+                            <div>
+                              <h4 className="mb-1 text-sm font-semibold text-brand-yellow">
+                                Ostatnie prowadzone lekcje
+                              </h4>
+                              <ul className="space-y-1 text-xs text-brand-textMuted">
+                                {activity.user.lessons_as_tutor.slice(0, 5).map((lesson) => (
+                                  <li
+                                    key={lesson.id_lessons}
+                                    className="rounded-lg bg-brand-black/60 px-3 py-2"
+                                  >
+                                    <span className="font-medium text-white">
+                                      {lesson.subject.name}
+                                    </span>
+                                    {" · "}
+                                    {new Date(lesson.lesson_date).toLocaleDateString("pl-PL")}
+                                    {` · ${lesson.start_time}–${lesson.end_time}`}
+                                    {` · ${formatLessonStatus(lesson.status)}`}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {activity.auditEvents.length > 0 && (
+                            <div>
+                              <h4 className="mb-1 text-sm font-semibold text-brand-yellow">
+                                Historia działań
+                              </h4>
+                              <ul className="space-y-2 text-xs text-brand-textMuted">
+                                {activity.auditEvents.map((entry) => {
+                                  const relatedLesson =
+                                    entry.entity_type === "lesson" &&
+                                    entry.entity_id !== null
+                                      ? [
+                                          ...activity.user.lessons_as_tutor,
+                                          ...activity.user.bookings_as_student.map(
+                                            (booking) => booking.lesson,
+                                          ),
+                                        ].find(
+                                          (lesson) =>
+                                            lesson.id_lessons === entry.entity_id,
+                                        )
+                                      : undefined;
+
+                                  return (
+                                    <li
+                                      key={entry.id_admin_audit_logs}
+                                      className="rounded-lg bg-brand-black/60 px-3 py-2"
+                                    >
+                                      <p className="font-medium text-white">
+                                        {formatActivityAction(entry.action)}
+                                      </p>
+                                      {relatedLesson ? (
+                                        <p className="mt-1">
+                                          {relatedLesson.subject.name}
+                                          {" · "}
+                                          {new Date(
+                                            relatedLesson.lesson_date,
+                                          ).toLocaleDateString("pl-PL")}
+                                          {` · ${relatedLesson.start_time}–${relatedLesson.end_time}`}
+                                        </p>
+                                      ) : entry.entity_type === "lesson" &&
+                                        entry.entity_id !== null ? (
+                                        <p className="mt-1">
+                                          Lekcja nr {entry.entity_id}
+                                        </p>
+                                      ) : null}
+                                      <p className="mt-1">
+                                        {new Date(entry.created_at).toLocaleString("pl-PL")}
+                                        {" · "}
+                                        {entry.actor
+                                          ? `Wykonał(a): ${entry.actor.first_name} ${entry.actor.last_name}`
+                                          : "Wykonawca: usunięte konto"}
+                                      </p>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>

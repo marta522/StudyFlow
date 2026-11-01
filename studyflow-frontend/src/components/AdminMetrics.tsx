@@ -2,6 +2,8 @@ import axios from "axios";
 import {
   AlertCircle,
   BarChart3,
+  CalendarDays,
+  Download,
   GraduationCap,
   RefreshCw,
   Star,
@@ -10,16 +12,49 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import api from "../api/axios";
+import { downloadCsv } from "../utils/csv";
 
 interface AdminMetricsData {
   year: number;
   studentCount: number;
+  activeStudentCount: number;
   tutorCount: number;
+  activeTutorCount: number;
   averageRating: number | null;
   pendingRequests: number;
+  cancelledLessonCount: number;
   completedLessonCount: number;
   monthlyRevenue: { month: number; revenue: number }[];
   lessonsBySubject: { name: string; count: number; percentage: number }[];
+  upcomingLessons: {
+    id_lessons: number;
+    lesson_date: string;
+    start_time: string;
+    end_time: string;
+    subject: { name: string };
+    tutor: { first_name: string; last_name: string };
+    bookings: { student: { first_name: string; last_name: string } }[];
+  }[];
+  pendingRequestItems: {
+    id_subject_requests: number;
+    subject_name: string;
+    created_at: string;
+    tutor: { first_name: string; last_name: string };
+  }[];
+  recentlyCancelledLessons: {
+    id_lessons: number;
+    lesson_date: string;
+    cancelled_at: string | null;
+    subject: { name: string };
+    tutor: { first_name: string; last_name: string };
+  }[];
+  tutorUtilization: {
+    tutorId: number;
+    tutorName: string;
+    weeklyHours: number;
+    bookedHours: number;
+    utilizationPercentage: number;
+  }[];
 }
 
 interface ApiError {
@@ -59,7 +94,13 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
-export function AdminMetrics() {
+export function AdminMetrics({
+  onGoToRequests,
+  onGoToSchedule,
+}: {
+  onGoToRequests?: () => void;
+  onGoToSchedule?: () => void;
+}) {
   const [metrics, setMetrics] = useState<AdminMetricsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +135,21 @@ export function AdminMetrics() {
     };
   }, []);
 
+  function exportMetrics() {
+    if (!metrics) return;
+    const rows = [
+      ["Metryka", "Wartość"],
+      ["Aktywni uczniowie", String(metrics.activeStudentCount)],
+      ["Aktywni korepetytorzy", String(metrics.activeTutorCount)],
+      ["Oczekujące zgłoszenia", String(metrics.pendingRequests)],
+      ["Odwołane lekcje łącznie", String(metrics.cancelledLessonCount)],
+      ["Ukończone lekcje", String(metrics.completedLessonCount)],
+      ["Przedmiot", "Liczba ukończonych lekcji"],
+      ...metrics.lessonsBySubject.map((subject) => [subject.name, String(subject.count)]),
+    ];
+    downloadCsv(`metryki-studyflow-${metrics.year}.csv`, rows);
+  }
+
   const maxRevenue = Math.max(
     ...(metrics?.monthlyRevenue.map((item) => item.revenue) ?? [0]),
     1,
@@ -102,13 +158,13 @@ export function AdminMetrics() {
   const cards = metrics
     ? [
         {
-          label: "Uczniowie",
-          value: metrics.studentCount.toLocaleString("pl-PL"),
+          label: "Aktywni uczniowie",
+          value: `${metrics.activeStudentCount} / ${metrics.studentCount}`,
           icon: Users,
         },
         {
-          label: "Korepetytorzy",
-          value: metrics.tutorCount.toLocaleString("pl-PL"),
+          label: "Aktywni korepetytorzy",
+          value: `${metrics.activeTutorCount} / ${metrics.tutorCount}`,
           icon: GraduationCap,
         },
         {
@@ -126,6 +182,11 @@ export function AdminMetrics() {
           label: "Zgłoszenia do rozpatrzenia",
           value: metrics.pendingRequests.toLocaleString("pl-PL"),
           icon: AlertCircle,
+        },
+        {
+          label: "Odwołane lekcje",
+          value: metrics.cancelledLessonCount.toLocaleString("pl-PL"),
+          icon: CalendarDays,
         },
       ]
     : [];
@@ -156,6 +217,15 @@ export function AdminMetrics() {
           />
           Odśwież
         </button>
+        <button
+          type="button"
+          onClick={exportMetrics}
+          disabled={!metrics}
+          className="inline-flex items-center gap-2 rounded-lg border border-brand-cardBorder px-3 py-2 text-sm text-brand-textMuted transition hover:border-brand-yellow hover:text-brand-yellow disabled:opacity-50"
+        >
+          <Download className="size-4" aria-hidden="true" />
+          Eksportuj CSV
+        </button>
       </header>
       {error && (
         <p
@@ -171,7 +241,7 @@ export function AdminMetrics() {
         </p>
       ) : metrics ? (
         <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
             {cards.map(({ label, value, icon: Icon }) => (
               <article
                 key={label}
@@ -191,6 +261,136 @@ export function AdminMetrics() {
               </article>
             ))}
           </div>
+
+          <div className="grid grid-cols-1 gap-5">
+            <section
+              className="space-y-4 rounded-2xl border border-brand-cardBorder bg-brand-card p-6"
+              aria-labelledby="admin-action-center"
+            >
+              <h3 id="admin-action-center" className="text-lg font-bold">
+                Do załatwienia
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {onGoToRequests && (
+                  <button
+                    type="button"
+                    onClick={onGoToRequests}
+                    className="rounded-lg border border-brand-cardBorder px-3 py-1.5 text-xs font-semibold text-brand-yellow hover:border-brand-yellow"
+                  >
+                    Otwórz zgłoszenia
+                  </button>
+                )}
+                {onGoToSchedule && (
+                  <button
+                    type="button"
+                    onClick={onGoToSchedule}
+                    className="rounded-lg border border-brand-cardBorder px-3 py-1.5 text-xs font-semibold text-brand-yellow hover:border-brand-yellow"
+                  >
+                    Otwórz harmonogram
+                  </button>
+                )}
+              </div>
+              <div>
+                <h4 className="mb-2 text-sm font-semibold text-brand-yellow">
+                  Zgłoszenia oczekujące ({metrics.pendingRequests})
+                </h4>
+                {metrics.pendingRequestItems.length === 0 ? (
+                  <p className="text-sm text-brand-textMuted">Brak zgłoszeń do rozpatrzenia.</p>
+                ) : (
+                  <ul className="space-y-2 text-sm">
+                    {metrics.pendingRequestItems.map((request) => (
+                      <li
+                        key={request.id_subject_requests}
+                        className="flex flex-wrap justify-between gap-2 rounded-lg bg-brand-black/60 px-3 py-2"
+                      >
+                        <span>{request.subject_name} · {request.tutor.first_name} {request.tutor.last_name}</span>
+                        <time className="text-xs text-brand-textMuted">
+                          {new Date(request.created_at).toLocaleDateString("pl-PL")}
+                        </time>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <h4 className="mb-2 text-sm font-semibold text-brand-yellow">
+                  Najbliższe lekcje
+                </h4>
+                {metrics.upcomingLessons.length === 0 ? (
+                  <p className="text-sm text-brand-textMuted">Brak lekcji w najbliższych 7 dniach.</p>
+                ) : (
+                  <ul className="space-y-2 text-sm">
+                    {metrics.upcomingLessons.slice(0, 8).map((lesson) => (
+                      <li
+                        key={lesson.id_lessons}
+                        className="rounded-lg bg-brand-black/60 px-3 py-2"
+                      >
+                        <p>
+                          {new Date(lesson.lesson_date).toLocaleDateString("pl-PL")} · {lesson.start_time}–{lesson.end_time} · {lesson.subject.name}
+                        </p>
+                        <p className="mt-1 text-xs text-brand-textMuted">
+                          {lesson.tutor.first_name} {lesson.tutor.last_name}
+                          {lesson.bookings[0] &&
+                            ` · ${lesson.bookings.map(({ student }) => `${student.first_name} ${student.last_name}`).join(", ")}`}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <h4 className="mb-2 text-sm font-semibold text-red-300">
+                  Ostatnie odwołania (30 dni)
+                </h4>
+                {metrics.recentlyCancelledLessons.length === 0 ? (
+                  <p className="text-sm text-brand-textMuted">Brak odwołanych lekcji.</p>
+                ) : (
+                  <ul className="space-y-2 text-sm">
+                    {metrics.recentlyCancelledLessons.map((lesson) => (
+                      <li
+                        key={lesson.id_lessons}
+                        className="flex flex-wrap justify-between gap-2 rounded-lg bg-red-500/5 px-3 py-2"
+                      >
+                        <span>
+                          {lesson.subject.name} · {lesson.tutor.first_name} {lesson.tutor.last_name}
+                        </span>
+                        <time className="text-xs text-brand-textMuted">
+                          {new Date(lesson.cancelled_at ?? lesson.lesson_date).toLocaleDateString("pl-PL")}
+                        </time>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </section>
+          </div>
+
+          <section className="rounded-2xl border border-brand-cardBorder bg-brand-card p-6">
+            <h3 className="mb-4 text-lg font-bold">Obłożenie korepetytorów w najbliższych 7 dniach</h3>
+            {metrics.tutorUtilization.length === 0 ? (
+              <p className="text-sm text-brand-textMuted">Brak aktywnych korepetytorów z ustawioną dostępnością.</p>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {metrics.tutorUtilization.map((tutor) => (
+                  <article key={tutor.tutorId} className="rounded-xl bg-brand-black/60 p-4">
+                    <div className="mb-2 flex justify-between text-sm">
+                      <span>{tutor.tutorName}</span>
+                      <span className="font-semibold text-brand-yellow">{tutor.utilizationPercentage}%</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-brand-cardBorder">
+                      <div
+                        className="h-full rounded-full bg-brand-yellow"
+                        style={{ width: `${tutor.utilizationPercentage}%` }}
+                      />
+                    </div>
+                    <p className="mt-2 text-xs text-brand-textMuted">
+                      {tutor.bookedHours} h z {tutor.weeklyHours} h dostępności
+                    </p>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
 
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
             <section

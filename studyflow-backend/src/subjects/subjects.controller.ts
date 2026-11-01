@@ -93,6 +93,13 @@ export class SubjectsController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('tutor')
+  @Get('requests/mine')
+  getTutorSubjectRequests(@Req() request: AuthenticatedRequest) {
+    return this.subjectsService.getTutorSubjectRequests(request.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
   @Get('requests')
   getPendingSubjectRequests() {

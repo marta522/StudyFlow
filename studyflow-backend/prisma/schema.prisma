@@ -17,19 +17,19 @@ model Role {
 }
 
 model User {
-  id_users      Int           @id @default(autoincrement())
+  id_users      Int      @id @default(autoincrement())
   first_name    String
   last_name     String
-  email         String        @unique
+  email         String   @unique
   password_hash String
-  token_version Int           @default(0)
+  token_version Int      @default(0)
   phone         String?
   role_id       Int
-  status        String        @default("ACTIVE")
+  status        String   @default("ACTIVE")
   experience    String?
   about_me      String?
-  created_at    DateTime      @default(now())
-  updated_at    DateTime      @updatedAt
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
 
   role Role @relation(fields: [role_id], references: [id_roles])
 
@@ -43,17 +43,23 @@ model User {
   monthly_grades_given      MonthlyGrade[]    @relation("TutorGrades")
   subject_requests_created  SubjectRequest[]  @relation("TutorRequests")
   subject_requests_reviewed SubjectRequest[]  @relation("AdminReviewedRequests")
+  cancelled_lessons         Lesson[]          @relation("LessonCanceller")
+  audit_events              AdminAuditLog[]   @relation("AuditActor")
+  password_reset_tokens     PasswordResetToken[]
+  reported_lesson_issues    LessonIssue[]      @relation("IssueReporter")
+  resolved_lesson_issues    LessonIssue[]      @relation("IssueResolver")
   financial_reports         FinancialReport[]
+  notifications             Notification[]
 
   @@map("users")
 }
 
 model Subject {
-  id_subjects Int           @id @default(autoincrement())
+  id_subjects Int      @id @default(autoincrement())
   name        String
   description String?
-  status      String        @default("ACTIVE")
-  created_at  DateTime      @default(now())
+  status      String   @default("ACTIVE")
+  created_at  DateTime @default(now())
 
   tutor_subjects   TutorSubject[]
   lessons          Lesson[]
@@ -91,34 +97,39 @@ model Availability {
 }
 
 model Lesson {
-  id_lessons  Int          @id @default(autoincrement())
+  id_lessons  Int      @id @default(autoincrement())
   tutor_id    Int
   subject_id  Int
   lesson_date DateTime
   start_time  String
   end_time    String
-  status      String       @default("SCHEDULED")
+  status      String   @default("SCHEDULED")
   created_by  Int
+  cancelled_by Int?
+  cancelled_at DateTime?
   homework    String?
   attention   String?
-  created_at  DateTime     @default(now())
-  updated_at  DateTime     @updatedAt
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
 
-  tutor   User    @relation("TutorLessons", fields: [tutor_id], references: [id_users])
-  subject Subject @relation(fields: [subject_id], references: [id_subjects])
+  tutor             User    @relation("TutorLessons", fields: [tutor_id], references: [id_users])
+  cancelled_by_user User?   @relation("LessonCanceller", fields: [cancelled_by], references: [id_users], onDelete: SetNull)
+  subject           Subject @relation(fields: [subject_id], references: [id_subjects])
 
-  bookings Booking[]
-  reviews  Review[]
+  bookings       Booking[]
+  reviews        Review[]
+  monthly_grades MonthlyGrade[]
+  issues         LessonIssue[]
 
   @@map("lessons")
 }
 
 model Booking {
-  id_bookings  Int           @id @default(autoincrement())
+  id_bookings  Int      @id @default(autoincrement())
   lesson_id    Int
   student_id   Int
-  booking_date DateTime      @default(now())
-  status       String        @default("CONFIRMED")
+  booking_date DateTime @default(now())
+  status       String   @default("CONFIRMED")
   note         String?
 
   lesson  Lesson @relation(fields: [lesson_id], references: [id_lessons], onDelete: Cascade)
@@ -160,6 +171,7 @@ model Review {
 
 model MonthlyGrade {
   id_monthly_grades Int      @id @default(autoincrement())
+  lesson_id         Int?     @unique
   student_id        Int
   tutor_id          Int
   subject_id        Int
@@ -172,20 +184,57 @@ model MonthlyGrade {
   student User    @relation("StudentGrades", fields: [student_id], references: [id_users])
   tutor   User    @relation("TutorGrades", fields: [tutor_id], references: [id_users])
   subject Subject @relation(fields: [subject_id], references: [id_subjects])
+  lesson  Lesson? @relation(fields: [lesson_id], references: [id_lessons], onDelete: SetNull)
 
+  @@unique([student_id, subject_id, month, year])
   @@map("monthly_grades")
 }
 
+model PasswordResetToken {
+  id_password_reset_tokens Int       @id @default(autoincrement())
+  user_id                  Int
+  token_hash               String    @unique
+  expires_at               DateTime
+  used_at                  DateTime?
+  created_at               DateTime  @default(now())
+
+  user User @relation(fields: [user_id], references: [id_users], onDelete: Cascade)
+
+  @@index([user_id, expires_at])
+  @@map("password_reset_tokens")
+}
+
+model LessonIssue {
+  id_lesson_issues Int       @id @default(autoincrement())
+  lesson_id        Int
+  reporter_id      Int
+  title            String
+  description      String
+  status           String    @default("OPEN")
+  admin_note       String?
+  resolved_by      Int?
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  lesson   Lesson @relation(fields: [lesson_id], references: [id_lessons], onDelete: Cascade)
+  reporter User   @relation("IssueReporter", fields: [reporter_id], references: [id_users], onDelete: Cascade)
+  resolver User?  @relation("IssueResolver", fields: [resolved_by], references: [id_users], onDelete: SetNull)
+
+  @@index([status, created_at])
+  @@index([reporter_id, lesson_id])
+  @@map("lesson_issues")
+}
+
 model SubjectRequest {
-  id_subject_requests Int           @id @default(autoincrement())
+  id_subject_requests Int       @id @default(autoincrement())
   tutor_id            Int
   subject_name        String
   description         String?
-  status              String        @default("PENDING")
+  status              String    @default("PENDING")
   subject_id          Int?
   reviewed_by         Int?
   reviewed_at         DateTime?
-  created_at          DateTime      @default(now())
+  created_at          DateTime  @default(now())
 
   tutor    User     @relation("TutorRequests", fields: [tutor_id], references: [id_users])
   reviewer User?    @relation("AdminReviewedRequests", fields: [reviewed_by], references: [id_users])
@@ -208,4 +257,34 @@ model FinancialReport {
   generated_by User @relation(fields: [generated_by_user_id], references: [id_users])
 
   @@map("financial_reports")
+}
+
+model Notification {
+  id_notifications Int       @id @default(autoincrement())
+  user_id          Int
+  title            String
+  message          String
+  type             String
+  read_at          DateTime?
+  created_at       DateTime  @default(now())
+
+  user User @relation(fields: [user_id], references: [id_users], onDelete: Cascade)
+
+  @@index([user_id, read_at, created_at])
+  @@map("notifications")
+}
+
+model AdminAuditLog {
+  id_admin_audit_logs Int      @id @default(autoincrement())
+  actor_id            Int?
+  action              String
+  entity_type         String
+  entity_id           Int?
+  details             String   @default("{}")
+  created_at          DateTime @default(now())
+
+  actor User? @relation("AuditActor", fields: [actor_id], references: [id_users], onDelete: SetNull)
+
+  @@index([created_at, action, entity_type])
+  @@map("admin_audit_logs")
 }

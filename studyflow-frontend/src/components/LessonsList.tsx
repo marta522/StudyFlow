@@ -24,6 +24,24 @@ interface TutorSubjectOffer {
   subject: Subject;
 }
 
+interface TutorAvailabilitySlot {
+  id_availability: number;
+  day_of_week: string;
+  start_time: string;
+  end_time: string;
+}
+
+interface TutorStudent {
+  id_users: number;
+  first_name: string;
+  last_name: string;
+}
+
+interface TutorBooking {
+  status: string;
+  student: TutorStudent;
+}
+
 interface Lesson {
   id_lessons: number;
   lesson_date: string;
@@ -41,6 +59,16 @@ interface Lesson {
 interface ApiError {
   message?: string | string[];
 }
+
+const DAYS_BY_NUMBER = [
+  "Niedziela",
+  "Poniedziałek",
+  "Wtorek",
+  "Środa",
+  "Czwartek",
+  "Piątek",
+  "Sobota",
+];
 
 function getApiError(error: unknown, fallback: string): string {
   if (axios.isAxiosError<ApiError>(error)) {
@@ -76,18 +104,27 @@ export function LessonsList() {
   const { user } = useAuth();
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [subjects, setSubjects] = useState<TutorSubjectOffer[]>([]);
+  const [students, setStudents] = useState<TutorStudent[]>([]);
+  const [availability, setAvailability] = useState<TutorAvailabilitySlot[]>([]);
   const [selectedSubject, setSelectedSubject] = useState("");
+  const [selectedStudent, setSelectedStudent] = useState("");
   const [lessonDate, setLessonDate] = useState("");
   const [startTime, setStartTime] = useState("14:00");
   const [endTime, setEndTime] = useState("15:00");
   const [loading, setLoading] = useState(true);
   const [loadingSubjects, setLoadingSubjects] = useState(true);
+  const [loadingStudents, setLoadingStudents] = useState(true);
+  const [loadingAvailability, setLoadingAvailability] = useState(true);
+  const [availabilityError, setAvailabilityError] = useState<string | null>(
+    null,
+  );
   const [submitting, setSubmitting] = useState(false);
   const [bookingLessonId, setBookingLessonId] = useState<number | null>(null);
   const [editingLessonId, setEditingLessonId] = useState<number | null>(null);
   const [deletingLessonId, setDeletingLessonId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [subjectError, setSubjectError] = useState<string | null>(null);
+  const [studentError, setStudentError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -168,6 +205,73 @@ export function LessonsList() {
   }, [user?.role]);
 
   useEffect(() => {
+    if (user?.role !== "tutor") return;
+
+    let cancelled = false;
+    void api
+      .get<TutorAvailabilitySlot[]>("/tutors/me/availability")
+      .then(({ data }) => {
+        if (!cancelled) setAvailability(data);
+      })
+      .catch((requestError: unknown) => {
+        if (!cancelled) {
+          setAvailabilityError(
+            getApiError(
+              requestError,
+              "Nie udało się pobrać Twojej dostępności.",
+            ),
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingAvailability(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.role]);
+
+  useEffect(() => {
+    if (user?.role !== "tutor") return;
+
+    let cancelled = false;
+    void api
+      .get<TutorBooking[]>("/bookings/my-bookings")
+      .then(({ data }) => {
+        if (cancelled) return;
+        const studentsById = new Map<number, TutorStudent>();
+        data
+          .filter((booking) => booking.status !== "CANCELLED")
+          .forEach((booking) =>
+            studentsById.set(booking.student.id_users, booking.student),
+          );
+        setStudents(
+          [...studentsById.values()].sort((left, right) =>
+            `${left.last_name} ${left.first_name}`.localeCompare(
+              `${right.last_name} ${right.first_name}`,
+              "pl",
+            ),
+          ),
+        );
+      })
+      .catch((requestError: unknown) => {
+        if (!cancelled) {
+          setStudentError(
+            getApiError(requestError, "Nie udało się pobrać listy uczniów."),
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingStudents(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.role]);
+
+  useEffect(() => {
     if (!notice) return;
     const timeoutId = window.setTimeout(() => setNotice(null), 4000);
     return () => window.clearTimeout(timeoutId);
@@ -193,6 +297,12 @@ export function LessonsList() {
 
   async function handleCreateLesson(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (startTime >= endTime) {
+      setActionError(
+        "Godzina zakończenia musi być późniejsza niż godzina rozpoczęcia.",
+      );
+      return;
+    }
     setSubmitting(true);
     setActionError(null);
     setNotice(null);
@@ -202,16 +312,23 @@ export function LessonsList() {
         lesson_date: lessonDate,
         start_time: startTime,
         end_time: endTime,
+        ...(editingLessonId === null &&
+          selectedStudent && { student_id: Number(selectedStudent) }),
       };
       if (editingLessonId === null) {
         await api.post("/bookings/lessons", lessonData);
-        setNotice("Dodano nowy termin zajęć!");
+        setNotice(
+          selectedStudent
+            ? "Dodano lekcję i przypisano ją do ucznia."
+            : "Dodano nowy wolny termin zajęć.",
+        );
       } else {
         await api.patch(`/bookings/lessons/${editingLessonId}`, lessonData);
         setNotice("Zaktualizowano termin zajęć.");
         setEditingLessonId(null);
       }
       setLessonDate("");
+      setSelectedStudent("");
       await loadLessons();
     } catch (requestError: unknown) {
       setActionError(
@@ -225,6 +342,7 @@ export function LessonsList() {
   function beginEdit(lesson: Lesson) {
     setEditingLessonId(lesson.id_lessons);
     setSelectedSubject(String(lesson.subject.id_subjects));
+    setSelectedStudent("");
     setLessonDate(lesson.lesson_date.slice(0, 10));
     setStartTime(lesson.start_time);
     setEndTime(lesson.end_time);
@@ -286,9 +404,65 @@ export function LessonsList() {
               : "Edytuj termin zajęć"}
           </h2>
 
+          <div className="mb-5 rounded-xl border border-brand-cardBorder bg-brand-black/40 p-4">
+            <h3 className="font-semibold text-white">Twoja dostępność</h3>
+            <p className="mt-1 text-sm text-brand-textMuted">
+              Termin zajęć musi mieścić się w jednym z poniższych okien.
+            </p>
+            {availabilityError ? (
+              <p className="mt-3 text-sm text-red-300" role="alert">
+                {availabilityError}
+              </p>
+            ) : loadingAvailability ? (
+              <p className="mt-3 text-sm text-brand-textMuted" role="status">
+                Pobieranie dostępności…
+              </p>
+            ) : availability.length === 0 ? (
+              <p className="mt-3 text-sm text-brand-textMuted">
+                Nie masz jeszcze zdefiniowanej dostępności. Dodaj ją w
+                zakładce „Dostępność”.
+              </p>
+            ) : (
+              <ul className="mt-3 flex flex-wrap gap-2">
+                {availability.map((slot) => (
+                  <li
+                    key={slot.id_availability}
+                    className="rounded-lg border border-brand-yellow/30 bg-brand-yellow/10 px-3 py-2 text-sm text-brand-yellow"
+                  >
+                    {slot.day_of_week}, {slot.start_time}–{slot.end_time}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {lessonDate && availability.length > 0 && (
+              <p className="mt-3 text-sm text-brand-textMuted">
+                Dostępność w wybranym dniu (
+                {DAYS_BY_NUMBER[
+                  new Date(`${lessonDate}T00:00:00.000Z`).getUTCDay()
+                ]}
+                ):{" "}
+                {availability
+                  .filter(
+                    (slot) =>
+                      slot.day_of_week ===
+                      DAYS_BY_NUMBER[
+                        new Date(`${lessonDate}T00:00:00.000Z`).getUTCDay()
+                      ],
+                  )
+                  .map((slot) => `${slot.start_time}–${slot.end_time}`)
+                  .join(", ") || "brak dostępnych godzin"}
+              </p>
+            )}
+          </div>
+
           {subjectError && (
             <p className="mb-4 text-sm text-red-300" role="alert">
               {subjectError}
+            </p>
+          )}
+          {studentError && (
+            <p className="mb-4 text-sm text-red-300" role="alert">
+              {studentError}
             </p>
           )}
 
@@ -348,6 +522,44 @@ export function LessonsList() {
               />
             </div>
 
+            <div>
+              <label
+                htmlFor="lesson-student"
+                className="mb-1 block text-xs font-medium text-brand-textMuted"
+              >
+                Przypisz do ucznia (opcjonalnie)
+              </label>
+              <select
+                id="lesson-student"
+                value={selectedStudent}
+                onChange={(event) => setSelectedStudent(event.target.value)}
+                disabled={
+                  editingLessonId !== null ||
+                  loadingStudents ||
+                  students.length === 0
+                }
+                className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2 text-sm text-white outline-none focus:border-brand-yellow disabled:opacity-60"
+              >
+                <option value="">
+                  {loadingStudents
+                    ? "Pobieranie uczniów…"
+                    : students.length === 0
+                      ? "Brak uczniów do przypisania"
+                      : "Wolny termin dla wszystkich"}
+                </option>
+                {students.map((student) => (
+                  <option key={student.id_users} value={student.id_users}>
+                    {student.first_name} {student.last_name}
+                  </option>
+                ))}
+              </select>
+              {selectedStudent && (
+                <p className="mt-1 text-xs text-brand-textMuted">
+                  Lekcja będzie zarezerwowana wyłącznie dla wybranego ucznia.
+                </p>
+              )}
+            </div>
+
             <fieldset>
               <legend className="mb-1 block text-xs font-medium text-brand-textMuted">
                 Godzina (od–do)
@@ -366,6 +578,7 @@ export function LessonsList() {
                   aria-label="Godzina zakończenia"
                   value={endTime}
                   onChange={(event) => setEndTime(event.target.value)}
+                  min={startTime}
                   required
                   className="w-1/2 rounded-lg border border-brand-cardBorder bg-brand-black px-2 py-2 text-center text-sm text-white outline-none focus:border-brand-yellow"
                 />

@@ -72,6 +72,12 @@ export function TutorAvailability() {
 
   async function handleAddSlot(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (startTime >= endTime) {
+      setError(
+        "Godzina zakończenia musi być późniejsza niż godzina rozpoczęcia.",
+      );
+      return;
+    }
     setSubmitting(true);
     setError(null);
     setNotice(null);
@@ -151,6 +157,7 @@ export function TutorAvailability() {
             Godzina do
             <input
               type="time"
+              min={startTime}
               required
               value={endTime}
               onChange={(event) => setEndTime(event.target.value)}

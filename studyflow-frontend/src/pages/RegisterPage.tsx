@@ -114,6 +114,7 @@ export function RegisterPage() {
                 value={firstName}
                 onChange={(event) => setFirstName(event.target.value)}
                 required
+                maxLength={45}
                 className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-brand-textMuted/60 focus:border-brand-yellow focus:ring-2 focus:ring-brand-yellow/20"
                 placeholder="Jan"
               />
@@ -132,6 +133,7 @@ export function RegisterPage() {
                 value={lastName}
                 onChange={(event) => setLastName(event.target.value)}
                 required
+                maxLength={45}
                 className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-brand-textMuted/60 focus:border-brand-yellow focus:ring-2 focus:ring-brand-yellow/20"
                 placeholder="Kowalski"
               />
@@ -152,6 +154,7 @@ export function RegisterPage() {
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               required
+              maxLength={100}
               className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-brand-textMuted/60 focus:border-brand-yellow focus:ring-2 focus:ring-brand-yellow/20"
               placeholder="jan@example.com"
             />
@@ -162,7 +165,7 @@ export function RegisterPage() {
               htmlFor="registerPassword"
               className="mb-1 block text-xs font-medium text-brand-textMuted"
             >
-              Hasło (minimum 6 znaków)
+              Hasło (minimum 8 znaków)
             </label>
             <input
               id="registerPassword"
@@ -171,7 +174,8 @@ export function RegisterPage() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               required
-              minLength={6}
+              minLength={8}
+              maxLength={72}
               className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-brand-textMuted/60 focus:border-brand-yellow focus:ring-2 focus:ring-brand-yellow/20"
               placeholder="Wpisz hasło"
             />
@@ -190,6 +194,7 @@ export function RegisterPage() {
               autoComplete="tel"
               value={phone}
               onChange={(event) => setPhone(event.target.value)}
+              maxLength={45}
               className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-brand-textMuted/60 focus:border-brand-yellow focus:ring-2 focus:ring-brand-yellow/20"
               placeholder="Numer telefonu"
             />
