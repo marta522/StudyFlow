@@ -19,6 +19,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Fragment } from "react";
 import api from "../api/axios";
 import { downloadCsv } from "../utils/csv";
+import { formatDateOnly } from "../utils/date";
 
 type UserStatus = "ACTIVE" | "BLOCKED";
 type UserRole = "student" | "tutor";
@@ -586,12 +587,14 @@ export function UserManagement() {
             />
           </label>
           <label className="space-y-2 text-sm text-brand-textMuted">
-            Hasło tymczasowe (min. 8 znaków)
+            Hasło tymczasowe (min. 8 znaków, mała i wielka litera oraz cyfra)
             <input
               required
               type="password"
               minLength={8}
               maxLength={72}
+              pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9]).+"
+              title="Hasło musi zawierać małą i wielką literę oraz cyfrę."
               value={createForm.password}
               onChange={(event) =>
                 setCreateForm({ ...createForm, password: event.target.value })
@@ -980,7 +983,7 @@ export function UserManagement() {
                                       {booking.lesson.subject.name}
                                     </span>
                                     {" · "}
-                                    {new Date(booking.lesson.lesson_date).toLocaleDateString("pl-PL")}
+                                    {formatDateOnly(booking.lesson.lesson_date)}
                                     {` · ${booking.lesson.start_time}–${booking.lesson.end_time}`}
                                     {` · korepetytor: ${booking.lesson.tutor.first_name} ${booking.lesson.tutor.last_name}`}
                                     {` · ${formatLessonStatus(booking.lesson.status)}`}
@@ -1004,7 +1007,7 @@ export function UserManagement() {
                                       {lesson.subject.name}
                                     </span>
                                     {" · "}
-                                    {new Date(lesson.lesson_date).toLocaleDateString("pl-PL")}
+                                    {formatDateOnly(lesson.lesson_date)}
                                     {` · ${lesson.start_time}–${lesson.end_time}`}
                                     {` · ${formatLessonStatus(lesson.status)}`}
                                   </li>
@@ -1045,9 +1048,9 @@ export function UserManagement() {
                                         <p className="mt-1">
                                           {relatedLesson.subject.name}
                                           {" · "}
-                                          {new Date(
+                                          {formatDateOnly(
                                             relatedLesson.lesson_date,
-                                          ).toLocaleDateString("pl-PL")}
+                                          )}
                                           {` · ${relatedLesson.start_time}–${relatedLesson.end_time}`}
                                         </p>
                                       ) : entry.entity_type === "lesson" &&

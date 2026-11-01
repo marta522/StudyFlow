@@ -1,0 +1,10 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /studyflow-backend
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /studyflow-frontend
+    schedule:
+      interval: weekly

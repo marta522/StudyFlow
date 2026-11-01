@@ -5,9 +5,7 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { Roles } from './decorators/roles.decorator';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { RolesGuard } from './guards/roles.guard';
 import type { AuthenticatedUser } from './jwt.strategy';
 
 interface AuthenticatedRequest {
@@ -59,10 +57,4 @@ export class AuthController {
     return request.user;
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin')
-  @Get('admin-only')
-  adminOnly() {
-    return { message: 'Tylko administrator ma dostęp do tej treści!' };
-  }
 }

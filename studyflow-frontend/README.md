@@ -11,7 +11,7 @@
 
 Przed uruchomieniem projektu upewnij się, że masz zainstalowane:
 
-1. **Node.js** w wersji `v24` lub nowszej oraz menedżer pakietów `npm`
+1. **Node.js** w wersji `v24.15` lub nowszej oraz menedżer pakietów `npm`
 2. **Git**
 
 SQLite jest bazą plikową — nie wymaga instalowania ani uruchamiania PostgreSQL, Dockera ani osobnego serwera bazy danych. Zmiana z PostgreSQL nie przenosi automatycznie istniejących danych; lokalna baza SQLite zaczyna jako nowa baza.
@@ -39,21 +39,22 @@ cd StudyFlow
    npm install
    ```
 
-3. Utwórz plik `.env` w katalogu `studyflow-backend`:
+3. Skopiuj `studyflow-backend/.env.example` do pliku `.env`:
 
-   ```env
-   DATABASE_URL="file:./dev.db"
-   JWT_SECRET="super_secret_jwt_key_studyflow"
-   PORT=3000
-   SMTP_HOST="smtp.example.com"
-   SMTP_PORT=587
-   SMTP_SECURE=false
-   SMTP_USER="studyflow@example.com"
-   SMTP_PASSWORD="your-smtp-password"
-   SMTP_FROM="StudyFlow <studyflow@example.com>"
-   FRONTEND_URL="http://localhost:5173"
+   PowerShell:
+
+   ```powershell
+   Copy-Item .env.example .env
    ```
 
+   macOS/Linux:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   Zmień `JWT_SECRET` na unikalną wartość i ustaw `CORS_ORIGINS` na adresy
+   frontendu. SMTP jest potrzebne tylko do wysyłania linków resetujących hasło.
    Plik bazy danych zostanie utworzony w `studyflow-backend/prisma/dev.db`.
 
 4. Zastosuj migracje:
@@ -70,13 +71,19 @@ cd StudyFlow
    Remove-Item Env:SEED_DEMO_RESET
    ```
 
+   macOS/Linux:
+
+   ```bash
+   SEED_DEMO_RESET=true npx prisma db seed
+   ```
+
 6. Uruchom backend w trybie deweloperskim:
 
    ```bash
    npm run start:dev
    ```
 
-   Backend będzie dostępny pod adresem `http://localhost:3000`.
+   API backendu będzie dostępne pod adresem `http://localhost:3000/api`.
 
    Odzyskiwanie hasła wymaga poprawnej konfiguracji SMTP. Link resetujący jest
    jednorazowy i wygasa po 30 minutach. Instrukcję tworzenia i odtwarzania kopii
@@ -101,7 +108,7 @@ Otwórz nowe okno terminala i, z katalogu głównego repozytorium, wykonaj:
 3. Opcjonalnie utwórz plik `.env` w katalogu `studyflow-frontend`, aby wskazać adres API:
 
    ```env
-   VITE_API_URL=http://localhost:3000
+   VITE_API_BASE_URL=http://localhost:3000/api
    ```
 
 4. Uruchom aplikację:

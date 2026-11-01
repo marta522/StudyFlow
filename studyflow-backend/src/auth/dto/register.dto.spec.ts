@@ -7,7 +7,7 @@ describe('RegisterDto', () => {
       first_name: 'Anna',
       last_name: 'Kowalska',
       email: 'anna@example.com',
-      password: 'strongpass123',
+      password: 'Strongpass123',
       role: 'student',
       ...overrides,
     });
@@ -31,5 +31,11 @@ describe('RegisterDto', () => {
 
   it('accepts a valid registration payload', async () => {
     await expect(validate(makeDto())).resolves.toHaveLength(0);
+  });
+
+  it('requires a lowercase letter, uppercase letter, and a digit in passwords', async () => {
+    const errors = await validate(makeDto({ password: 'lowercase123' }));
+
+    expect(errors.map(({ property }) => property)).toContain('password');
   });
 });

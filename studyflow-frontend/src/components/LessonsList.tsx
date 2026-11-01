@@ -52,7 +52,6 @@ interface Lesson {
     id_users: number;
     first_name: string;
     last_name: string;
-    email: string;
   };
 }
 
@@ -380,6 +379,7 @@ export function LessonsList() {
         <div
           className="flex items-center gap-3 rounded-xl border border-brand-yellow bg-brand-yellow/10 p-4 text-brand-yellow"
           role="status"
+          aria-live="polite"
         >
           <CheckCircle className="size-5 shrink-0" aria-hidden="true" />
           {notice}

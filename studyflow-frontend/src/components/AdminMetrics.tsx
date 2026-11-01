@@ -13,6 +13,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import api from "../api/axios";
 import { downloadCsv } from "../utils/csv";
+import { formatDateOnly } from "../utils/date";
 
 interface AdminMetricsData {
   year: number;
@@ -326,7 +327,7 @@ export function AdminMetrics({
                         className="rounded-lg bg-brand-black/60 px-3 py-2"
                       >
                         <p>
-                          {new Date(lesson.lesson_date).toLocaleDateString("pl-PL")} · {lesson.start_time}–{lesson.end_time} · {lesson.subject.name}
+                          {formatDateOnly(lesson.lesson_date)} · {lesson.start_time}–{lesson.end_time} · {lesson.subject.name}
                         </p>
                         <p className="mt-1 text-xs text-brand-textMuted">
                           {lesson.tutor.first_name} {lesson.tutor.last_name}
@@ -355,7 +356,9 @@ export function AdminMetrics({
                           {lesson.subject.name} · {lesson.tutor.first_name} {lesson.tutor.last_name}
                         </span>
                         <time className="text-xs text-brand-textMuted">
-                          {new Date(lesson.cancelled_at ?? lesson.lesson_date).toLocaleDateString("pl-PL")}
+                          {lesson.cancelled_at
+                            ? new Date(lesson.cancelled_at).toLocaleDateString("pl-PL")
+                            : formatDateOnly(lesson.lesson_date)}
                         </time>
                       </li>
                     ))}

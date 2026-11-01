@@ -1,5 +1,5 @@
 import axios from "axios";
-import { BookOpen, LogIn } from "lucide-react";
+import { BookOpen, Eye, EyeOff, LogIn } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import api from "../api/axios";
@@ -35,6 +35,7 @@ function getLoginError(error: unknown): string {
 export function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [logoutWarning] = useState<string | null>(() =>
@@ -71,8 +72,8 @@ export function LoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-brand-black px-4 py-10 text-white">
       <section className="w-full max-w-md rounded-2xl border border-brand-cardBorder bg-brand-card p-7 shadow-2xl shadow-black/40 sm:p-9">
-        <a
-          href="/"
+        <Link
+          to="/"
           className="mb-8 flex items-center justify-center gap-3"
           aria-label="StudyFlow"
         >
@@ -80,7 +81,7 @@ export function LoginPage() {
           <span className="text-3xl font-bold tracking-wide">
             Study<span className="text-brand-yellow">Flow</span>
           </span>
-        </a>
+        </Link>
 
         <h1 className="text-center text-2xl font-semibold tracking-tight">
           Witaj ponownie
@@ -142,17 +143,32 @@ export function LoginPage() {
             >
               Hasło
             </label>
-            <input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              required
-              maxLength={72}
-              className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-4 py-3 text-white outline-none transition placeholder:text-brand-textMuted/60 focus:border-brand-yellow focus:ring-2 focus:ring-brand-yellow/20"
-              placeholder="Wpisz swoje hasło"
-            />
+            <div className="relative">
+              <input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+                maxLength={72}
+                className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-4 py-3 pr-12 text-white outline-none transition placeholder:text-brand-textMuted/60 focus:border-brand-yellow focus:ring-2 focus:ring-brand-yellow/20"
+                placeholder="Wpisz swoje hasło"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((visible) => !visible)}
+                aria-label={showPassword ? "Ukryj hasło" : "Pokaż hasło"}
+                aria-pressed={showPassword}
+                className="absolute inset-y-0 right-0 grid w-11 place-items-center text-brand-textMuted transition hover:text-brand-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-yellow"
+              >
+                {showPassword ? (
+                  <EyeOff className="size-5" aria-hidden="true" />
+                ) : (
+                  <Eye className="size-5" aria-hidden="true" />
+                )}
+              </button>
+            </div>
             <Link
               to="/forgot-password"
               className="mt-2 inline-block text-sm font-medium text-brand-yellow hover:underline"

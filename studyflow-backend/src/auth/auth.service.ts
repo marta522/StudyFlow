@@ -15,6 +15,9 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 
+const INVALID_LOGIN_PASSWORD_HASH =
+  '$2b$10$9sJl3c1r9Rst6a6rfyxyhupWVbehW/0o4Pg2ho03kHnaLVPTn6wD.';
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -75,14 +78,18 @@ export class AuthService {
 
   async login(dto: LoginDto) {
     const user = await this.prisma.user.findUnique({
-      where: { email: dto.email },
+      where: { email: dto.email.trim().toLowerCase() },
       include: { role: true },
     });
+    const passwordMatches = await bcrypt.compare(
+      dto.password,
+      user?.password_hash ?? INVALID_LOGIN_PASSWORD_HASH,
+    );
 
     if (
       !user ||
       user.status === 'BLOCKED' ||
-      !(await bcrypt.compare(dto.password, user.password_hash))
+      !passwordMatches
     ) {
       throw new UnauthorizedException('Nieprawidłowy email lub hasło.');
     }

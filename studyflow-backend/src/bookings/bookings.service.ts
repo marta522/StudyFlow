@@ -18,6 +18,18 @@ import { UpdateAdminLessonDto } from './dto/update-admin-lesson.dto';
 export class BookingsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private rethrowTransactionError(error: unknown): never {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2034'
+    ) {
+      throw new ConflictException(
+        'Termin koliduje z inną operacją. Odśwież kalendarz i spróbuj ponownie.',
+      );
+    }
+    throw error;
+  }
+
   async createLesson(tutorId: number, dto: CreateLessonDto) {
     if (dto.start_time >= dto.end_time) {
       throw new BadRequestException(
@@ -31,6 +43,7 @@ export class BookingsService {
         'Termin lekcji musi przypadać na dzisiejszy dzień lub później.',
       );
     }
+    this.assertFutureLessonStart(lessonDate, dto.start_time);
 
     try {
       return await this.prisma.$transaction(
@@ -205,6 +218,12 @@ export class BookingsService {
               'Podano nieprawidłowy termin lekcji.',
             );
           }
+          if (
+            dateText !== lesson.lesson_date.toISOString().slice(0, 10) ||
+            startTime !== lesson.start_time
+          ) {
+            this.assertFutureLessonStart(lessonDate, startTime);
+          }
 
           const offer = await tx.tutorSubject.findFirst({
             where: {
@@ -363,8 +382,9 @@ export class BookingsService {
         'Termin lekcji musi przypadać na dzisiejszy dzień lub później.',
       );
     }
+    this.assertFutureLessonStart(lessonDate, dto.start_time);
 
-    return this.prisma.$transaction(
+    const transaction = this.prisma.$transaction(
       async (tx) => {
         const tutor = await tx.user.findFirst({
           where: {
@@ -482,6 +502,9 @@ export class BookingsService {
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
+    return transaction.catch((error: unknown) =>
+      this.rethrowTransactionError(error),
+    );
   }
 
   async updateAdminLesson(
@@ -489,7 +512,7 @@ export class BookingsService {
     lessonId: number,
     dto: UpdateAdminLessonDto,
   ) {
-    return this.prisma.$transaction(
+    const transaction = this.prisma.$transaction(
       async (tx) => {
         const lesson = await tx.lesson.findUnique({
           where: { id_lessons: lessonId },
@@ -522,6 +545,12 @@ export class BookingsService {
           startTime >= endTime
         ) {
           throw new BadRequestException('Podano nieprawidłowy termin lekcji.');
+        }
+        if (
+          dateText !== lesson.lesson_date.toISOString().slice(0, 10) ||
+          startTime !== lesson.start_time
+        ) {
+          this.assertFutureLessonStart(lessonDate, startTime);
         }
         const tutor = await tx.user.findFirst({
           where: {
@@ -637,6 +666,9 @@ export class BookingsService {
         return updatedLesson;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+    return transaction.catch((error: unknown) =>
+      this.rethrowTransactionError(error),
     );
   }
 
@@ -758,7 +790,6 @@ export class BookingsService {
             id_users: true,
             first_name: true,
             last_name: true,
-            email: true,
           },
         },
         subject: true,
@@ -800,6 +831,12 @@ export class BookingsService {
           ) {
             throw new ConflictException(
               'Ta lekcja została już zarezerwowana przez kogoś innego.',
+            );
+          }
+
+          if (!this.isLessonStartInFuture(lesson.lesson_date, lesson.start_time)) {
+            throw new ConflictException(
+              'Ta lekcja nie jest już dostępna do rezerwacji.',
             );
           }
 
@@ -1034,6 +1071,25 @@ export class BookingsService {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
     return today;
+  }
+
+  private isLessonStartInFuture(lessonDate: Date, startTime: string): boolean {
+    const [year, month, day] = lessonDate
+      .toISOString()
+      .slice(0, 10)
+      .split('-')
+      .map(Number);
+    const [hour, minute] = startTime.split(':').map(Number);
+    const lessonStart = new Date(year, month - 1, day, hour, minute);
+    return lessonStart.getTime() > Date.now();
+  }
+
+  private assertFutureLessonStart(lessonDate: Date, startTime: string): void {
+    if (!this.isLessonStartInFuture(lessonDate, startTime)) {
+      throw new BadRequestException(
+        'Godzina rozpoczęcia lekcji musi przypadać w przyszłości.',
+      );
+    }
   }
 
   private async assertWithinTutorAvailability(

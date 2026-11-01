@@ -300,11 +300,14 @@ export function Navbar({ activeTab, setActiveTab }: NavbarProps) {
                                 <p className="mt-1 text-xs leading-5 text-brand-textMuted">
                                   {notification.message}
                                 </p>
-                                <p className="mt-2 text-[11px] text-brand-textMuted">
+                                <time
+                                  dateTime={notification.created_at}
+                                  className="mt-2 block text-xs text-brand-textMuted"
+                                >
                                   {new Date(
                                     notification.created_at,
                                   ).toLocaleString("pl-PL")}
-                                </p>
+                                </time>
                               </div>
                               {!notification.read_at && (
                                 <button

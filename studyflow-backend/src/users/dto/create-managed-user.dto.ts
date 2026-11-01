@@ -28,6 +28,9 @@ export class CreateManagedUserDto {
 
   @IsString()
   @MinLength(8)
+  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/, {
+    message: 'Hasło musi zawierać małą i wielką literę oraz cyfrę.',
+  })
   @MaxLength(72)
   password!: string;
 

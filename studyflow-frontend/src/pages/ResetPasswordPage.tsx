@@ -59,7 +59,7 @@ export function ResetPasswordPage() {
           <KeyRound className="mx-auto size-10 text-brand-yellow" aria-hidden="true" />
           <h1 className="mt-4 text-2xl font-bold">Ustaw nowe hasło</h1>
           <p className="mt-2 text-sm text-brand-textMuted">
-            Hasło musi zawierać co najmniej 8 znaków.
+            Hasło musi mieć co najmniej 8 znaków oraz zawierać małą i wielką literę oraz cyfrę.
           </p>
         </div>
         {error && (
@@ -75,6 +75,8 @@ export function ResetPasswordPage() {
               autoComplete="new-password"
               minLength={8}
               maxLength={72}
+              pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9]).+"
+              title="Hasło musi zawierać małą i wielką literę oraz cyfrę."
               required
               value={password}
               onChange={(event) => setPassword(event.target.value)}

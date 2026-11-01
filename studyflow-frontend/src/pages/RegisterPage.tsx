@@ -165,7 +165,7 @@ export function RegisterPage() {
               htmlFor="registerPassword"
               className="mb-1 block text-xs font-medium text-brand-textMuted"
             >
-              Hasło (minimum 8 znaków)
+              Hasło (min. 8 znaków, mała i wielka litera oraz cyfra)
             </label>
             <input
               id="registerPassword"
@@ -176,6 +176,8 @@ export function RegisterPage() {
               required
               minLength={8}
               maxLength={72}
+              pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9]).+"
+              title="Hasło musi zawierać małą i wielką literę oraz cyfrę."
               className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-brand-textMuted/60 focus:border-brand-yellow focus:ring-2 focus:ring-brand-yellow/20"
               placeholder="Wpisz hasło"
             />

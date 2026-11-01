@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
 import { ConflictException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { BookingsService } from './bookings.service';
 
 describe('BookingsService schedule changes', () => {
@@ -192,5 +193,59 @@ describe('BookingsService schedule changes', () => {
       service.bookLesson(9, { lesson_id: 13 }),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(tx.booking.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects booking a lesson whose start time has already passed today', async () => {
+    const now = new Date();
+    const lessonDate = new Date(
+      Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()),
+    );
+    const tx = {
+      lesson: {
+        findUnique: jest.fn().mockResolvedValue({
+          id_lessons: 13,
+          tutor_id: 7,
+          lesson_date: lessonDate,
+          start_time: '00:00',
+          status: 'SCHEDULED',
+          bookings: [],
+        }),
+      },
+      booking: { create: jest.fn() },
+      notification: { create: jest.fn() },
+    };
+    prisma.$transaction.mockImplementation(async (callback) =>
+      callback(tx as never),
+    );
+
+    await expect(
+      service.bookLesson(9, { lesson_id: 13 }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.booking.create).not.toHaveBeenCalled();
+  });
+
+  it('maps admin lesson transaction conflicts to HTTP 409', async () => {
+    prisma.$transaction.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Transaction conflict', {
+        code: 'P2034',
+        clientVersion: 'test',
+      }),
+    );
+    const tomorrow = new Date();
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    const lessonDate = tomorrow.toISOString().slice(0, 10);
+
+    await expect(
+      service.createAdminLesson(1, {
+        tutor_id: 2,
+        subject_id: 3,
+        lesson_date: lessonDate,
+        start_time: '10:00',
+        end_time: '11:00',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.updateAdminLesson(1, 2, {})).rejects.toBeInstanceOf(
+      ConflictException,
+    );
   });
 });

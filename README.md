@@ -9,7 +9,7 @@
 
 ## 📋 Wymagania wstępne
 
-- **Node.js** w wersji `v18` lub nowszej oraz **npm**
+- **Node.js** w wersji `v24.15` lub nowszej oraz **npm**
 - **Git**
 
 Projekt używa SQLite, czyli bazy przechowywanej w lokalnym pliku. Nie musisz instalować ani uruchamiać PostgreSQL, Dockera ani osobnego serwera bazy danych.
@@ -38,21 +38,23 @@ cd studyflow-backend
 npm install
 ```
 
-Utwórz w katalogu `studyflow-backend` plik `.env`. Możesz otworzyć Notatnik poleceniem:
+Skopiuj `studyflow-backend/.env.example` do pliku `.env` w katalogu backendu.
+W PowerShellu użyj:
 
 ```powershell
-notepad .env
+Copy-Item .env.example .env
 ```
 
-Wklej do pliku poniższą konfigurację. Zastąp przykładowy `JWT_SECRET` własnym sekretnym kluczem:
+W macOS/Linux użyj:
 
-```env
-DATABASE_URL="file:./dev.db"
-JWT_SECRET="wpisz-wlasny-sekretny-klucz"
-PORT=3000
+```bash
+cp .env.example .env
 ```
 
-Plik bazy danych zostanie utworzony w `studyflow-backend/prisma/dev.db`.
+Ustaw w `.env` unikalny `JWT_SECRET` (co najmniej 32 znaki) oraz `CORS_ORIGINS`
+na dokładne adresy frontendu, oddzielone przecinkami. Plik bazy danych zostanie
+utworzony w `studyflow-backend/prisma/dev.db`.
+Sekret można wygenerować poleceniem `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`.
 
 #### Utwórz bazę i opcjonalnie dodaj konta testowe
 
@@ -70,6 +72,12 @@ npx prisma db seed
 Remove-Item Env:SEED_DEMO_RESET
 ```
 
+Na macOS/Linux, z katalogu `studyflow-backend`, uruchom:
+
+```bash
+SEED_DEMO_RESET=true npx prisma db seed
+```
+
 > Seed usuwa dane z lokalnej bazy przed dodaniem danych demonstracyjnych. Uruchamiaj go tylko przy pierwszej konfiguracji albo wtedy, gdy chcesz zresetować bazę.
 
 #### Uruchom backend
@@ -80,7 +88,7 @@ W tym samym terminalu uruchom serwer:
 npm run start:dev
 ```
 
-Backend będzie dostępny pod adresem `http://localhost:3000`. Pozostaw ten terminal otwarty.
+API będzie dostępne pod adresem `http://localhost:3000/api`. Pozostaw ten terminal otwarty.
 
 ### 3. Zainstaluj i uruchom frontend
 
@@ -97,7 +105,7 @@ Frontend będzie dostępny pod adresem `http://localhost:5173`. Otwórz ten adre
 Jeśli frontend wymaga wskazania adresu API, utwórz plik `.env` w katalogu `studyflow-frontend`:
 
 ```env
-VITE_API_URL=http://localhost:3000
+VITE_API_BASE_URL=http://localhost:3000/api
 ```
 
 Po zmianie `.env` uruchom ponownie serwer Vite.
@@ -111,6 +119,8 @@ Konta są dostępne po uruchomieniu opcjonalnego seeda demonstracyjnego:
 | 👑 Administrator | `admin@studyflow.pl` | `haslo123` |
 | 🎓 Korepetytor | `tutor@studyflow.pl` | `haslo123` |
 | 📚 Uczeń | `student@studyflow.pl` | `haslo123` |
+
+Te konta i hasła są wyłącznie do lokalnych testów — nie używaj ich w produkcji.
 
 ## 🌿 Wprowadzanie zmian
 

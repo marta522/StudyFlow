@@ -8,6 +8,7 @@ import {
   Clock3,
   MessageSquareWarning,
   RefreshCw,
+  Search,
   UserRound,
 } from "lucide-react";
 import {
@@ -19,6 +20,7 @@ import {
 } from "react";
 import api from "../api/axios";
 import { useAuth } from "../context/useAuth";
+import { Link } from "react-router-dom";
 
 interface Person {
   first_name: string;
@@ -406,12 +408,42 @@ export function MyBookings({
       )}
 
       {loading ? (
-        <p role="status" className="py-8 text-center text-brand-textMuted">
-          Ładowanie rezerwacji…
-        </p>
+        <div
+          role="status"
+          aria-label="Ładowanie rezerwacji"
+          className="grid gap-4 md:grid-cols-2"
+        >
+          <span className="sr-only">Ładowanie rezerwacji…</span>
+          {[0, 1, 2, 3].map((item) => (
+            <div
+              key={item}
+              aria-hidden="true"
+              className="animate-pulse space-y-3 rounded-2xl border border-brand-cardBorder bg-brand-card p-5"
+            >
+              <div className="h-5 w-2/5 rounded bg-white/10" />
+              <div className="h-4 w-3/5 rounded bg-white/10" />
+              <div className="h-4 w-1/3 rounded bg-white/10" />
+            </div>
+          ))}
+        </div>
       ) : !error && bookings.length === 0 ? (
-        <div className="rounded-2xl border border-brand-cardBorder bg-brand-card p-8 text-center text-brand-textMuted">
-          Brak lekcji w harmonogramie.
+        <div className="rounded-2xl border border-brand-cardBorder bg-brand-card p-8 text-center">
+          <CalendarDays
+            className="mx-auto size-10 text-brand-yellow"
+            aria-hidden="true"
+          />
+          <p className="mt-3 text-brand-textMuted">
+            Brak lekcji w harmonogramie.
+          </p>
+          {user?.role === "student" && (
+            <Link
+              to="/tutors"
+              className="mt-5 inline-flex items-center gap-2 rounded-lg bg-brand-yellow px-4 py-2.5 text-sm font-semibold text-brand-black transition hover:bg-brand-yellowHover"
+            >
+              <Search className="size-4" aria-hidden="true" />
+              Znajdź korepetytora
+            </Link>
+          )}
         </div>
       ) : (
         <div className="space-y-5">

@@ -127,8 +127,12 @@ describe('AuthService', () => {
     prisma.user.findUnique.mockResolvedValue(null);
 
     await expect(
-      service.login({ email: 'missing@example.com', password: 'secret1' }),
+      service.login({ email: 'MISSING@example.com', password: 'secret1' }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(prisma.user.findUnique).toHaveBeenCalledWith({
+      where: { email: 'missing@example.com' },
+      include: { role: true },
+    });
   });
 
   it('sends a single-use reset token without exposing it in the response', async () => {

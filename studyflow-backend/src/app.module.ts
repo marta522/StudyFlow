@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { createObserveModule } from '@nestjs/observe';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AttendanceModule } from './attendance/attendance.module';
@@ -15,17 +14,25 @@ import { ReviewsModule } from './reviews/reviews.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { LessonIssuesModule } from './lesson-issues/lesson-issues.module';
 
-export const { ObserveModule, ObserveInstrument } = createObserveModule();
-
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
-    // Distributed tracing, auto-correlated logs, request/job metrics, error
-    // telemetry, alarms, and more — out of the box. Sign up at https://observe.nestjs.com
-    ObserveModule.forRoot({
-      appKey: 'YOUR_APP_KEY',
-      appSecret: 'YOUR_APP_SECRET',
-      serviceId: 'studyflow-backend',
+    ConfigModule.forRoot({
+      isGlobal: true,
+      validate: (config: Record<string, unknown>) => {
+        if (
+          typeof config.DATABASE_URL !== 'string' ||
+          config.DATABASE_URL.length === 0
+        ) {
+          throw new Error('DATABASE_URL must be configured.');
+        }
+        if (
+          typeof config.JWT_SECRET !== 'string' ||
+          config.JWT_SECRET.length < 32
+        ) {
+          throw new Error('JWT_SECRET must be at least 32 characters long.');
+        }
+        return config;
+      },
     }),
     PrismaModule,
     AuthModule,
