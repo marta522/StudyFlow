@@ -22,14 +22,26 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error: unknown) => {
+    const requestUrl = axios.isAxiosError(error)
+      ? (error.config?.url ?? "").split("?")[0]
+      : "";
+    const isExcludedAuthRequest = [
+      "/auth/login",
+      "/auth/register",
+      "/auth/change-password",
+    ].some((path) => requestUrl.endsWith(path));
     if (
       axios.isAxiosError(error) &&
       error.response?.status === 401 &&
       localStorage.getItem("token") &&
-      !["/auth/login", "/auth/register"].includes(error.config?.url ?? "")
+      !isExcludedAuthRequest
     ) {
       localStorage.removeItem("token");
       if (window.location.pathname !== "/login") {
+        sessionStorage.setItem(
+          "sessionExpired",
+          "Sesja wygasła. Zaloguj się ponownie, aby kontynuować.",
+        );
         window.location.assign("/login");
       }
     }

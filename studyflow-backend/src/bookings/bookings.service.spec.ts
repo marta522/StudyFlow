@@ -224,6 +224,46 @@ describe('BookingsService schedule changes', () => {
     expect(tx.booking.create).not.toHaveBeenCalled();
   });
 
+  it('uses APP_TIMEZONE instead of the host timezone', async () => {
+    const previousTimezone = process.env.TZ;
+    const previousAppTimezone = process.env.APP_TIMEZONE;
+    process.env.TZ = 'UTC';
+    process.env.APP_TIMEZONE = 'Europe/Warsaw';
+    jest.useFakeTimers().setSystemTime(new Date('2026-01-15T00:30:00.000Z'));
+
+    try {
+      const timezoneService = new BookingsService(prisma as never);
+      const tx = {
+        lesson: {
+          findUnique: jest.fn().mockResolvedValue({
+            id_lessons: 13,
+            tutor_id: 7,
+            lesson_date: new Date('2026-01-15T00:00:00.000Z'),
+            start_time: '01:00',
+            status: 'SCHEDULED',
+            bookings: [],
+          }),
+        },
+        booking: { create: jest.fn() },
+        notification: { create: jest.fn() },
+      };
+      prisma.$transaction.mockImplementation(async (callback) =>
+        callback(tx as never),
+      );
+
+      await expect(
+        timezoneService.bookLesson(9, { lesson_id: 13 }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(tx.booking.create).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+      if (previousTimezone === undefined) delete process.env.TZ;
+      else process.env.TZ = previousTimezone;
+      if (previousAppTimezone === undefined) delete process.env.APP_TIMEZONE;
+      else process.env.APP_TIMEZONE = previousAppTimezone;
+    }
+  });
+
   it('maps admin lesson transaction conflicts to HTTP 409', async () => {
     prisma.$transaction.mockRejectedValue(
       new Prisma.PrismaClientKnownRequestError('Transaction conflict', {

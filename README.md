@@ -116,9 +116,9 @@ Konta są dostępne po uruchomieniu opcjonalnego seeda demonstracyjnego:
 
 | Rola | Email | Hasło |
 |---|---|---|
-| 👑 Administrator | `admin@studyflow.pl` | `haslo123` |
-| 🎓 Korepetytor | `tutor@studyflow.pl` | `haslo123` |
-| 📚 Uczeń | `student@studyflow.pl` | `haslo123` |
+| 👑 Administrator | `admin@studyflow.pl` | `Haslo123` |
+| 🎓 Korepetytor | `tutor@studyflow.pl` | `Haslo123` |
+| 📚 Uczeń | `student@studyflow.pl` | `Haslo123` |
 
 Te konta i hasła są wyłącznie do lokalnych testów — nie używaj ich w produkcji.
 

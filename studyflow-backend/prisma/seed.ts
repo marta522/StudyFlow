@@ -44,7 +44,7 @@ async function main() {
     prisma.role.create({ data: { name: 'student' } }),
     prisma.role.create({ data: { name: 'tutor' } }),
   ]);
-  const passwordHash = await bcrypt.hash('haslo123', 10);
+  const passwordHash = await bcrypt.hash('Haslo123', 10);
 
   const [admin, tutor1, tutor2, student1, student2] = await Promise.all([
     prisma.user.create({
@@ -382,7 +382,7 @@ async function main() {
   console.log('Administrator: admin@studyflow.pl');
   console.log('Korepetytorzy: tutor@studyflow.pl, dariusz@studyflow.pl');
   console.log('Uczniowie: student@studyflow.pl, anna@studyflow.pl');
-  console.log('Hasło do wszystkich kont: haslo123');
+  console.log('Hasło do wszystkich kont: Haslo123');
   console.log(
     `Utworzono ${[booking1, booking2, booking3, booking4].length} rezerwacje. Dostępny termin ma ID ${availableEnglish.id_lessons}.`,
   );

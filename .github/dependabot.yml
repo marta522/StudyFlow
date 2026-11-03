@@ -4,7 +4,27 @@ updates:
     directory: /studyflow-backend
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      backend-production:
+        dependency-type: production
+        patterns: ["*"]
+      backend-development:
+        dependency-type: development
+        patterns: ["*"]
   - package-ecosystem: npm
     directory: /studyflow-frontend
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      frontend-production:
+        dependency-type: production
+        patterns: ["*"]
+      frontend-development:
+        dependency-type: development
+        patterns: ["*"]

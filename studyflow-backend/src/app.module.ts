@@ -31,6 +31,16 @@ import { LessonIssuesModule } from './lesson-issues/lesson-issues.module';
         ) {
           throw new Error('JWT_SECRET must be at least 32 characters long.');
         }
+        try {
+          new Intl.DateTimeFormat('en-US', {
+            timeZone:
+              typeof config.APP_TIMEZONE === 'string'
+                ? config.APP_TIMEZONE
+                : 'Europe/Warsaw',
+          });
+        } catch {
+          throw new Error('APP_TIMEZONE must be a valid IANA timezone.');
+        }
         return config;
       },
     }),

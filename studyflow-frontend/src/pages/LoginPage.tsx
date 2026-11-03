@@ -41,6 +41,9 @@ export function LoginPage() {
   const [logoutWarning] = useState<string | null>(() =>
     sessionStorage.getItem("logoutWarning"),
   );
+  const [sessionExpiredWarning] = useState<string | null>(() =>
+    sessionStorage.getItem("sessionExpired"),
+  );
   const { login } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -48,7 +51,8 @@ export function LoginPage() {
 
   useEffect(() => {
     if (logoutWarning) sessionStorage.removeItem("logoutWarning");
-  }, [logoutWarning]);
+    if (sessionExpiredWarning) sessionStorage.removeItem("sessionExpired");
+  }, [logoutWarning, sessionExpiredWarning]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -104,6 +108,14 @@ export function LoginPage() {
             role="alert"
           >
             {logoutWarning}
+          </div>
+        )}
+        {sessionExpiredWarning && (
+          <div
+            className="mt-6 rounded-lg border border-amber-500/50 bg-amber-500/10 p-3 text-center text-sm text-amber-200"
+            role="alert"
+          >
+            {sessionExpiredWarning}
           </div>
         )}
         {passwordResetSuccess && (

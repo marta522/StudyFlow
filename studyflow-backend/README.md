@@ -39,9 +39,12 @@ Use Node.js 24.15 or newer.
 
 All `POST /api/auth/*` routes are limited to 100 requests per IP per 15 minutes.
 Registration is additionally limited to 5 requests per IP per hour, login to 10
-requests per IP per 15 minutes, and password-reset requests to 3 per IP per 15
-minutes. Limits use in-memory storage and are intended for a single API
-instance.
+failed requests per IP per 15 minutes, and password-reset requests to 3 per IP
+per 15 minutes. Successful logins do not count toward the login limit.
+Configure `TRUST_PROXY` to the number of trusted proxy hops or the trusted proxy
+address range; it defaults to `loopback`. Limits use in-memory storage and are
+intended for a single API instance. Lesson dates and start times use
+`APP_TIMEZONE` (default `Europe/Warsaw`).
 `GET /api/health` is a liveness check. Set `CORS_ORIGINS` to the exact
 comma-separated frontend origins in deployment; the default allows only
 `http://localhost:5173`.
@@ -157,7 +160,7 @@ On macOS/Linux:
 SEED_DEMO_APPEND=true npm run db:populate-demo
 ```
 
-The generated local accounts use the demo password `haslo123`. Do not use
+The generated local accounts use the demo password `Haslo123`. Do not use
 these accounts or password in production. The script refuses production and
 non-SQLite databases and records a marker so repeated runs do not duplicate
 the dataset. The base reset seed also creates `admin@studyflow.pl`,

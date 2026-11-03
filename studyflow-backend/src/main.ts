@@ -8,6 +8,14 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
 
+  const trustedProxy = process.env.TRUST_PROXY ?? 'loopback';
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .set(
+      'trust proxy',
+      /^\d+$/.test(trustedProxy) ? Number(trustedProxy) : trustedProxy,
+    );
   app.use(helmet());
   app.use(
     '/api/auth',
@@ -39,6 +47,7 @@ async function bootstrap() {
     rateLimit({
       windowMs: 15 * 60 * 1000,
       limit: 10,
+      skipSuccessfulRequests: true,
       skip: (request) => request.method !== 'POST',
       standardHeaders: 'draft-8',
       legacyHeaders: false,

@@ -16,16 +16,19 @@ import { UpdateAdminLessonDto } from './dto/update-admin-lesson.dto';
 
 @Injectable()
 export class BookingsService {
+  private readonly appTimeZone = process.env.APP_TIMEZONE ?? 'Europe/Warsaw';
+
   constructor(private readonly prisma: PrismaService) {}
 
-  private rethrowTransactionError(error: unknown): never {
+  private rethrowTransactionError(
+    error: unknown,
+    conflictMessage = 'Termin koliduje z inną operacją. Odśwież kalendarz i spróbuj ponownie.',
+  ): never {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === 'P2034'
     ) {
-      throw new ConflictException(
-        'Termin koliduje z inną operacją. Odśwież kalendarz i spróbuj ponownie.',
-      );
+      throw new ConflictException(conflictMessage);
     }
     throw error;
   }
@@ -38,7 +41,10 @@ export class BookingsService {
     }
 
     const lessonDate = new Date(`${dto.lesson_date}T00:00:00.000Z`);
-    if (Number.isNaN(lessonDate.getTime()) || lessonDate < this.todayUtc()) {
+    if (
+      Number.isNaN(lessonDate.getTime()) ||
+      lessonDate < this.todayInAppTimezone()
+    ) {
       throw new BadRequestException(
         'Termin lekcji musi przypadać na dzisiejszy dzień lub później.',
       );
@@ -167,15 +173,7 @@ export class BookingsService {
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );
     } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2034'
-      ) {
-        throw new ConflictException(
-          'Termin koliduje z inną operacją. Odśwież kalendarz i spróbuj ponownie.',
-        );
-      }
-      throw error;
+      this.rethrowTransactionError(error);
     }
   }
 
@@ -211,7 +209,7 @@ export class BookingsService {
 
           if (
             Number.isNaN(lessonDate.getTime()) ||
-            lessonDate < this.todayUtc() ||
+            lessonDate < this.todayInAppTimezone() ||
             startTime >= endTime
           ) {
             throw new BadRequestException(
@@ -303,15 +301,7 @@ export class BookingsService {
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );
     } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2034'
-      ) {
-        throw new ConflictException(
-          'Termin koliduje z inną operacją. Odśwież kalendarz i spróbuj ponownie.',
-        );
-      }
-      throw error;
+      this.rethrowTransactionError(error);
     }
   }
 
@@ -358,15 +348,10 @@ export class BookingsService {
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );
     } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2034'
-      ) {
-        throw new ConflictException(
-          'Termin jest właśnie rezerwowany. Odśwież kalendarz i spróbuj ponownie.',
-        );
-      }
-      throw error;
+      this.rethrowTransactionError(
+        error,
+        'Termin jest właśnie rezerwowany. Odśwież kalendarz i spróbuj ponownie.',
+      );
     }
   }
 
@@ -377,7 +362,10 @@ export class BookingsService {
       );
     }
     const lessonDate = new Date(`${dto.lesson_date}T00:00:00.000Z`);
-    if (Number.isNaN(lessonDate.getTime()) || lessonDate < this.todayUtc()) {
+    if (
+      Number.isNaN(lessonDate.getTime()) ||
+      lessonDate < this.todayInAppTimezone()
+    ) {
       throw new BadRequestException(
         'Termin lekcji musi przypadać na dzisiejszy dzień lub później.',
       );
@@ -541,7 +529,7 @@ export class BookingsService {
         const endTime = dto.end_time ?? lesson.end_time;
         if (
           Number.isNaN(lessonDate.getTime()) ||
-          lessonDate < this.todayUtc() ||
+          lessonDate < this.todayInAppTimezone() ||
           startTime >= endTime
         ) {
           throw new BadRequestException('Podano nieprawidłowy termin lekcji.');
@@ -780,7 +768,7 @@ export class BookingsService {
     return this.prisma.lesson.findMany({
       where: {
         status: 'SCHEDULED',
-        lesson_date: { gte: this.todayUtc() },
+        lesson_date: { gte: this.todayInAppTimezone() },
         subject: { status: 'ACTIVE' },
         bookings: { none: { status: { not: 'CANCELLED' } } },
       },
@@ -813,7 +801,7 @@ export class BookingsService {
 
           if (
             lesson.status !== 'SCHEDULED' ||
-            lesson.lesson_date < this.todayUtc()
+            lesson.lesson_date < this.todayInAppTimezone()
           ) {
             throw new ConflictException(
               'Ta lekcja nie jest już dostępna do rezerwacji.',
@@ -868,15 +856,10 @@ export class BookingsService {
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );
     } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2034'
-      ) {
-        throw new ConflictException(
-          'Ktoś właśnie zarezerwował ten termin. Odśwież listę dostępnych lekcji.',
-        );
-      }
-      throw error;
+      this.rethrowTransactionError(
+        error,
+        'Ktoś właśnie zarezerwował ten termin. Odśwież listę dostępnych lekcji.',
+      );
     }
   }
 
@@ -1067,25 +1050,90 @@ export class BookingsService {
     });
   }
 
-  private todayUtc(): Date {
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-    return today;
+  private getDateParts(date: Date) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: this.appTimeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(date);
+    const value = (type: string): number => {
+      const part = parts.find((item) => item.type === type);
+      if (!part) throw new Error(`Missing ${type} in timezone date parts.`);
+      return Number(part.value);
+    };
+    return {
+      year: value('year'),
+      month: value('month'),
+      day: value('day'),
+      hour: value('hour'),
+      minute: value('minute'),
+      second: value('second'),
+    };
   }
 
-  private isLessonStartInFuture(lessonDate: Date, startTime: string): boolean {
+  private todayInAppTimezone(): Date {
+    const { year, month, day } = this.getDateParts(new Date());
+    return new Date(Date.UTC(year, month - 1, day));
+  }
+
+  private getLessonStart(
+    lessonDate: Date,
+    startTime: string,
+  ): Date | null {
     const [year, month, day] = lessonDate
       .toISOString()
       .slice(0, 10)
       .split('-')
       .map(Number);
     const [hour, minute] = startTime.split(':').map(Number);
-    const lessonStart = new Date(year, month - 1, day, hour, minute);
-    return lessonStart.getTime() > Date.now();
+    const wallTimeAsUtc = Date.UTC(year, month - 1, day, hour, minute);
+    let timestamp = wallTimeAsUtc;
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const local = this.getDateParts(new Date(timestamp));
+      const representedLocalTime = Date.UTC(
+        local.year,
+        local.month - 1,
+        local.day,
+        local.hour,
+        local.minute,
+        local.second,
+      );
+      timestamp = wallTimeAsUtc - (representedLocalTime - timestamp);
+    }
+
+    const lessonStart = new Date(timestamp);
+    const resolved = this.getDateParts(lessonStart);
+    if (
+      resolved.year !== year ||
+      resolved.month !== month ||
+      resolved.day !== day ||
+      resolved.hour !== hour ||
+      resolved.minute !== minute
+    ) {
+      return null;
+    }
+    return lessonStart;
+  }
+
+  private isLessonStartInFuture(lessonDate: Date, startTime: string): boolean {
+    const lessonStart = this.getLessonStart(lessonDate, startTime);
+    return lessonStart !== null && lessonStart.getTime() > Date.now();
   }
 
   private assertFutureLessonStart(lessonDate: Date, startTime: string): void {
-    if (!this.isLessonStartInFuture(lessonDate, startTime)) {
+    const lessonStart = this.getLessonStart(lessonDate, startTime);
+    if (lessonStart === null) {
+      throw new BadRequestException(
+        'Podana godzina nie istnieje w wybranej strefie czasowej.',
+      );
+    }
+    if (lessonStart.getTime() <= Date.now()) {
       throw new BadRequestException(
         'Godzina rozpoczęcia lekcji musi przypadać w przyszłości.',
       );

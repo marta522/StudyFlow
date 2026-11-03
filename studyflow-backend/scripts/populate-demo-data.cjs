@@ -7,7 +7,7 @@ process.loadEnvFile(path.join(backendRoot, '.env'));
 
 const prisma = new PrismaClient();
 const expansionKey = 'DEMO_DATA_EXPANSION_LARGE_V1';
-const demoPassword = 'haslo123';
+const demoPassword = 'Haslo123';
 const subjectDefinitions = [
   ['Chemia', 'Chemia ogólna, organiczna i przygotowanie do matury.'],
   ['Biologia', 'Biologia człowieka, genetyka i przygotowanie do matury.'],
