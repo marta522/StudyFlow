@@ -56,6 +56,12 @@ na dokładne adresy frontendu, oddzielone przecinkami. Plik bazy danych zostanie
 utworzony w `studyflow-backend/prisma/dev.db`.
 Sekret można wygenerować poleceniem `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`.
 
+Opcjonalnie: `APP_TIMEZONE` (domyślnie `Europe/Warsaw`) określa strefę czasową
+szkoły, w której sprawdzane jest, czy lekcja już się rozpoczęła lub zakończyła.
+Za serwerem proxy (np. nginx) ustaw `TRUST_PROXY` na liczbę serwerów pośrednich
+(np. `1`; domyślnie `loopback`), aby limity prób logowania były liczone dla
+każdego użytkownika osobno.
+
 #### Utwórz bazę i opcjonalnie dodaj konta testowe
 
 Zastosuj migrację tworzącą tabele:

@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateAvailabilityDto } from './dto/create-availability.dto';
 import { SearchTutorsDto } from './dto/search-tutors.dto';
 import { UpdateTutorProfileDto } from './dto/update-tutor-profile.dto';
+import { todayInAppTimezone } from '../common/timezone';
 
 @Injectable()
 export class TutorsService {
@@ -334,7 +335,7 @@ export class TutorsService {
       where: {
         tutor_id: tutorId,
         status: 'SCHEDULED',
-        lesson_date: { gte: this.todayUtc() },
+        lesson_date: { gte: todayInAppTimezone() },
         subject: { status: 'ACTIVE' },
         bookings: { none: { status: { not: 'CANCELLED' } } },
       },
@@ -499,11 +500,5 @@ export class TutorsService {
     const [startHours, startMinutes] = startTime.split(':').map(Number);
     const [endHours, endMinutes] = endTime.split(':').map(Number);
     return (endHours * 60 + endMinutes - startHours * 60 - startMinutes) / 60;
-  }
-
-  private todayUtc(): Date {
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-    return today;
   }
 }
