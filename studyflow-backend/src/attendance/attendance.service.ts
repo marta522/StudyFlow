@@ -7,6 +7,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MarkAttendanceDto } from './dto/mark-attendance.dto';
+import { getLessonEnd } from '../common/timezone';
 
 @Injectable()
 export class AttendanceService {
@@ -34,7 +35,7 @@ export class AttendanceService {
       );
     }
 
-    const lessonEnd = this.getLessonEnd(
+    const lessonEnd = getLessonEnd(
       booking.lesson.lesson_date,
       booking.lesson.end_time,
     );
@@ -99,12 +100,5 @@ export class AttendanceService {
     return this.prisma.attendance.findUnique({
       where: { booking_id: bookingId },
     });
-  }
-
-  private getLessonEnd(lessonDate: Date, endTime: string): Date {
-    const [hours, minutes] = endTime.split(':').map(Number);
-    const end = new Date(lessonDate);
-    end.setUTCHours(hours, minutes, 0, 0);
-    return end;
   }
 }

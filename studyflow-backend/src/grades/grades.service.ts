@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { DEFAULT_LIST_LIMIT } from '../common/pagination';
 import { CreateGradeDto } from './dto/create-grade.dto';
+import { getLessonEnd } from '../common/timezone';
 
 @Injectable()
 export class GradesService {
@@ -44,9 +45,7 @@ export class GradesService {
       );
     }
 
-    const lessonEnd = new Date(lesson.lesson_date);
-    const [hours, minutes] = lesson.end_time.split(':').map(Number);
-    lessonEnd.setUTCHours(hours, minutes, 0, 0);
+    const lessonEnd = getLessonEnd(lesson.lesson_date, lesson.end_time);
     if (lessonEnd > new Date()) {
       throw new ForbiddenException(
         'Ocenę można wystawić dopiero po zakończeniu lekcji.',

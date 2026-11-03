@@ -59,6 +59,12 @@ Tutor prices and financial report totals are stored as integer groszy. Apply
 the migration with `npx prisma migrate deploy`; it converts existing monetary
 values to cents and adds schedule/booking indexes.
 
+Lessons are stored as a calendar date plus local `HH:mm` times, so checks such
+as "the lesson has already started" and "the lesson has ended" (booking,
+attendance, grades, and the list of free tutor slots) are evaluated in the
+school time zone, set with `APP_TIMEZONE`, rather than in the server's own time
+zone.
+
 The application does not automatically seed or delete database records. The
 Prisma seed script is destructive and must only be run when intentionally
 resetting demo data.
