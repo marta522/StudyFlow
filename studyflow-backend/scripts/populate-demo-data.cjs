@@ -235,7 +235,7 @@ async function main() {
             data: {
               tutor_id: tutor.id_users,
               subject_id: subject.id_subjects,
-              price_per_hour: 55 + (subjectIndex % 6) * 10,
+              price_per_hour_cents: (55 + (subjectIndex % 6) * 10) * 100,
               experience_years: 2 + (subjectIndex % 8),
               description: 'Przykładowa oferta demonstracyjna.',
             },
@@ -336,14 +336,19 @@ async function main() {
           item.lesson.lesson_date.getUTCMonth() + 1,
         ).padStart(2, '0')}`;
         const offer = offers.get(item.subject.id_subjects);
-        const durationHours =
-          (Number(item.lesson.end_time.slice(0, 2)) * 60 +
-            Number(item.lesson.end_time.slice(3, 5)) -
-            Number(item.lesson.start_time.slice(0, 2)) * 60 -
-            Number(item.lesson.start_time.slice(3, 5))) /
-          60;
-        const hourlyRate = Number(offer.price_per_hour);
-        const studentCost = durationHours * hourlyRate;
+        const durationMinutes =
+          Number(item.lesson.end_time.slice(0, 2)) * 60 +
+          Number(item.lesson.end_time.slice(3, 5)) -
+          Number(item.lesson.start_time.slice(0, 2)) * 60 -
+          Number(item.lesson.start_time.slice(3, 5));
+        const durationHours = durationMinutes / 60;
+        const hourlyRateCents = offer.price_per_hour_cents;
+        const studentCostCents = Math.round(
+          (hourlyRateCents * durationMinutes) / 60,
+        );
+        const tutorSalaryCents = Math.round(studentCostCents * 0.8);
+        const hourlyRate = hourlyRateCents / 100;
+        const studentCost = studentCostCents / 100;
         const details = monthlyDetails.get(dateKey) ?? [];
         details.push({
           lesson_id: item.lesson.id_lessons,
@@ -356,7 +361,7 @@ async function main() {
           duration_hours: durationHours,
           hourly_rate: hourlyRate,
           student_cost: studentCost,
-          tutor_salary: studentCost * 0.8,
+          tutor_salary: tutorSalaryCents / 100,
         });
         monthlyDetails.set(dateKey, details);
       }
@@ -375,14 +380,17 @@ async function main() {
           (total, detail) => total + detail.student_cost,
           0,
         );
+        const totalTutorSalary = details.reduce(
+          (total, detail) => total + detail.tutor_salary,
+          0,
+        );
         await tx.financialReport.create({
           data: {
             month,
             year,
             generated_by_user_id: admin.id_users,
-            total_student_cost: Math.round(totalStudentCost * 100) / 100,
-            total_tutor_salary:
-              Math.round(totalStudentCost * 0.8 * 100) / 100,
+            total_student_cost_cents: Math.round(totalStudentCost * 100),
+            total_tutor_salary_cents: Math.round(totalTutorSalary * 100),
             details: JSON.stringify(details),
           },
         });

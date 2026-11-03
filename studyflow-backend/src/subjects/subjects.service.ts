@@ -6,7 +6,12 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { RequestStatus } from './subject-status.enum';
+import { fromCents, toCents } from '../common/money';
+import { DEFAULT_LIST_LIMIT } from '../common/pagination';
+import {
+  SubjectRequestStatus as RequestStatus,
+  type SubjectRequestStatusValue,
+} from '../common/statuses';
 import { AssignTutorSubjectDto } from './dto/assign-tutor-subject.dto';
 import { CreateSubjectRequestDto } from './dto/create-subject-request.dto';
 import { CreateSubjectDto } from './dto/create-subject.dto';
@@ -17,8 +22,9 @@ export class SubjectsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findAll() {
-    return this.prisma.subject.findMany({
+    const subjects = await this.prisma.subject.findMany({
       where: { status: 'ACTIVE' },
+      take: DEFAULT_LIST_LIMIT,
       include: {
         tutor_subjects: {
           include: {
@@ -35,6 +41,15 @@ export class SubjectsService {
         },
       },
     });
+    return subjects.map(({ tutor_subjects, ...subject }) => ({
+      ...subject,
+      tutor_subjects: tutor_subjects.map(
+        ({ price_per_hour_cents, ...tutorSubject }) => ({
+          ...tutorSubject,
+          price_per_hour: fromCents(price_per_hour_cents),
+        }),
+      ),
+    }));
   }
 
   findAllForAdmin() {
@@ -51,6 +66,7 @@ export class SubjectsService {
         },
       },
       orderBy: { name: 'asc' },
+      take: DEFAULT_LIST_LIMIT,
     });
   }
 
@@ -158,22 +174,31 @@ export class SubjectsService {
       );
     }
 
-    return this.prisma.tutorSubject.create({
+    const tutorSubject = await this.prisma.tutorSubject.create({
       data: {
         tutor_id: tutorId,
         subject_id: dto.subject_id,
-        price_per_hour: dto.price_per_hour,
+        price_per_hour_cents: toCents(dto.price_per_hour),
         experience_years: dto.experience_years,
         description: dto.description,
       },
     });
+    const { price_per_hour_cents, ...offer } = tutorSubject;
+    return {
+      ...offer,
+      price_per_hour: fromCents(price_per_hour_cents),
+    };
   }
 
   async getTutorSubjects(tutorId: number) {
-    return this.prisma.tutorSubject.findMany({
+    const tutorSubjects = await this.prisma.tutorSubject.findMany({
       where: { tutor_id: tutorId },
       include: { subject: true },
     });
+    return tutorSubjects.map(({ price_per_hour_cents, ...tutorSubject }) => ({
+      ...tutorSubject,
+      price_per_hour: fromCents(price_per_hour_cents),
+    }));
   }
 
   async createSubjectRequest(tutorId: number, dto: CreateSubjectRequestDto) {
@@ -242,6 +267,7 @@ export class SubjectsService {
         },
       },
       orderBy: { created_at: 'asc' },
+      take: DEFAULT_LIST_LIMIT,
     });
   }
 
@@ -249,6 +275,7 @@ export class SubjectsService {
     return this.prisma.subjectRequest.findMany({
       where: { tutor_id: tutorId },
       orderBy: { created_at: 'desc' },
+      take: DEFAULT_LIST_LIMIT,
       select: {
         id_subject_requests: true,
         subject_name: true,
@@ -262,7 +289,7 @@ export class SubjectsService {
   async reviewSubjectRequest(
     requestId: number,
     reviewerId: number,
-    status: RequestStatus,
+    status: SubjectRequestStatusValue,
   ) {
     if (
       status !== RequestStatus.APPROVED &&

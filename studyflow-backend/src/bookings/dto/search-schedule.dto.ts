@@ -7,9 +7,12 @@ import {
   IsString,
   MaxLength,
   Matches,
+  Max,
   Min,
   MinLength,
 } from 'class-validator';
+import { LessonStatus } from '../../common/statuses';
+import { MAX_LIST_LIMIT } from '../../common/pagination';
 
 export class SearchScheduleDto {
   @IsOptional()
@@ -48,6 +51,20 @@ export class SearchScheduleDto {
 
   @IsOptional()
   @IsString()
-  @IsIn(['SCHEDULED', 'COMPLETED', 'CANCELLED'])
+  @IsIn(Object.values(LessonStatus))
   status?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_LIST_LIMIT)
+  limit?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100000)
+  offset?: number;
 }

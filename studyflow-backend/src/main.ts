@@ -1,12 +1,32 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
+import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { csrfProtection } from './auth/csrf.middleware';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
+  app.use(cookieParser());
+
+  const allowedOrigins = (
+    process.env.CORS_ORIGINS ?? 'http://localhost:5173'
+  )
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  if (allowedOrigins.length === 0) {
+    throw new Error('CORS_ORIGINS must contain at least one allowed origin.');
+  }
+  app.enableCors({
+    origin: allowedOrigins,
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'X-CSRF-Token'],
+  });
+  app.use(helmet());
 
   const trustedProxy = process.env.TRUST_PROXY ?? 'loopback';
   app
@@ -16,7 +36,7 @@ async function bootstrap() {
       'trust proxy',
       /^\d+$/.test(trustedProxy) ? Number(trustedProxy) : trustedProxy,
     );
-  app.use(helmet());
+  app.use('/api', csrfProtection);
   app.use(
     '/api/auth',
     rateLimit({
@@ -68,16 +88,6 @@ async function bootstrap() {
       },
     }),
   );
-  const allowedOrigins = (
-    process.env.CORS_ORIGINS ?? 'http://localhost:5173'
-  )
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-  if (allowedOrigins.length === 0) {
-    throw new Error('CORS_ORIGINS must contain at least one allowed origin.');
-  }
-  app.enableCors({ origin: allowedOrigins });
   app.setGlobalPrefix('api');
   app.enableShutdownHooks();
   app.useGlobalPipes(
@@ -87,6 +97,21 @@ async function bootstrap() {
       transform: true,
     }),
   );
+
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle('StudyFlow API')
+    .setDescription(
+      'Dokumentacja API platformy StudyFlow. Przed żądaniami zmieniającymi dane pobierz token przez GET /api/auth/csrf i dołącz go jako X-CSRF-Token.',
+    )
+    .setVersion('1.0')
+    .addCookieAuth('studyflow_session', {
+      type: 'apiKey',
+      in: 'cookie',
+      name: 'studyflow_session',
+    })
+    .build();
+  const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup('api/docs', app, swaggerDocument);
 
   await app.listen(process.env.PORT ?? 3000);
   logger.log(

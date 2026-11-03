@@ -1,7 +1,10 @@
-import { IsEnum } from 'class-validator';
-import { RequestStatus } from '../subject-status.enum';
+import { IsIn } from 'class-validator';
+import {
+  SubjectRequestStatus,
+  type SubjectRequestStatusValue,
+} from '../../common/statuses';
 
 export class ReviewSubjectRequestDto {
-  @IsEnum(RequestStatus)
-  status: RequestStatus;
+  @IsIn(Object.values(SubjectRequestStatus))
+  status: SubjectRequestStatusValue;
 }

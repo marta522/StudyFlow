@@ -12,7 +12,6 @@ import {
   UserRound,
 } from "lucide-react";
 import {
-  useCallback,
   useEffect,
   useRef,
   useState,
@@ -20,34 +19,8 @@ import {
 } from "react";
 import api from "../api/axios";
 import { useAuth } from "../context/useAuth";
+import { useBookings, type Booking } from "../hooks/useBookings";
 import { Link } from "react-router-dom";
-
-interface Person {
-  first_name: string;
-  last_name: string;
-  email?: string;
-}
-
-interface Booking {
-  id_bookings: number;
-  booking_date: string;
-  status: string;
-  note?: string | null;
-  cancelled_by_user?: Person | null;
-  lesson: {
-    id_lessons: number;
-    lesson_date: string;
-    start_time: string;
-    end_time: string;
-    status: string;
-    homework?: string | null;
-    cancelled_at?: string | null;
-    cancelled_by_user?: Person | null;
-    subject: { name: string };
-    tutor?: Person;
-  };
-  student?: Person;
-}
 
 interface ApiError {
   message?: string | string[];
@@ -109,7 +82,8 @@ export function MyBookings({
   onOpenTutorStudents?: () => void;
 }) {
   const { user } = useAuth();
-  const [bookings, setBookings] = useState<Booking[]>([]);
+  const bookingsQuery = useBookings<Booking>(user?.id);
+  const bookings = bookingsQuery.data ?? [];
   const [selectedPeriod, setSelectedPeriod] = useState<"upcoming" | "past">(
     "upcoming",
   );
@@ -134,44 +108,14 @@ export function MyBookings({
   const [sendingIssue, setSendingIssue] = useState(false);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const dialogTitleRef = useRef<HTMLHeadingElement>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const loading = bookingsQuery.isPending;
+  const error = bookingsQuery.error
+    ? getErrorMessage(bookingsQuery.error)
+    : null;
   const isDialogOpen = selectedBooking !== null;
 
-  const fetchBookings = useCallback(async () => {
-    const { data } = await api.get<Booking[]>("/bookings/my-bookings");
-    setBookings(data);
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    void api
-      .get<Booking[]>("/bookings/my-bookings")
-      .then(({ data }) => {
-        if (!cancelled) setBookings(data);
-      })
-      .catch((requestError: unknown) => {
-        if (!cancelled) setError(getErrorMessage(requestError));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   async function refreshBookings() {
-    setLoading(true);
-    setError(null);
-    try {
-      await fetchBookings();
-    } catch (requestError: unknown) {
-      setError(getErrorMessage(requestError));
-    } finally {
-      setLoading(false);
-    }
+    await bookingsQuery.refetch();
   }
 
   const heading =

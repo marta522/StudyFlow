@@ -35,19 +35,19 @@ model User {
 
   tutor_subjects            TutorSubject[]
   availability              Availability[]
-  lessons_as_tutor          Lesson[]          @relation("TutorLessons")
-  bookings_as_student       Booking[]         @relation("StudentBookings")
-  reviews_given             Review[]          @relation("StudentReviews")
-  reviews_received          Review[]          @relation("TutorReviews")
-  monthly_grades_received   MonthlyGrade[]    @relation("StudentGrades")
-  monthly_grades_given      MonthlyGrade[]    @relation("TutorGrades")
-  subject_requests_created  SubjectRequest[]  @relation("TutorRequests")
-  subject_requests_reviewed SubjectRequest[]  @relation("AdminReviewedRequests")
-  cancelled_lessons         Lesson[]          @relation("LessonCanceller")
-  audit_events              AdminAuditLog[]   @relation("AuditActor")
+  lessons_as_tutor          Lesson[]             @relation("TutorLessons")
+  bookings_as_student       Booking[]            @relation("StudentBookings")
+  reviews_given             Review[]             @relation("StudentReviews")
+  reviews_received          Review[]             @relation("TutorReviews")
+  monthly_grades_received   MonthlyGrade[]       @relation("StudentGrades")
+  monthly_grades_given      MonthlyGrade[]       @relation("TutorGrades")
+  subject_requests_created  SubjectRequest[]     @relation("TutorRequests")
+  subject_requests_reviewed SubjectRequest[]     @relation("AdminReviewedRequests")
+  cancelled_lessons         Lesson[]             @relation("LessonCanceller")
+  audit_events              AdminAuditLog[]      @relation("AuditActor")
   password_reset_tokens     PasswordResetToken[]
-  reported_lesson_issues    LessonIssue[]      @relation("IssueReporter")
-  resolved_lesson_issues    LessonIssue[]      @relation("IssueResolver")
+  reported_lesson_issues    LessonIssue[]        @relation("IssueReporter")
+  resolved_lesson_issues    LessonIssue[]        @relation("IssueResolver")
   financial_reports         FinancialReport[]
   notifications             Notification[]
 
@@ -70,12 +70,12 @@ model Subject {
 }
 
 model TutorSubject {
-  id_tutor_subjects Int     @id @default(autoincrement())
-  tutor_id          Int
-  subject_id        Int
-  price_per_hour    Float
-  experience_years  Int?
-  description       String?
+  id_tutor_subjects    Int     @id @default(autoincrement())
+  tutor_id             Int
+  subject_id           Int
+  price_per_hour_cents Int     @default(0)
+  experience_years     Int?
+  description          String?
 
   tutor   User    @relation(fields: [tutor_id], references: [id_users], onDelete: Cascade)
   subject Subject @relation(fields: [subject_id], references: [id_subjects], onDelete: Cascade)
@@ -97,20 +97,20 @@ model Availability {
 }
 
 model Lesson {
-  id_lessons  Int      @id @default(autoincrement())
-  tutor_id    Int
-  subject_id  Int
-  lesson_date DateTime
-  start_time  String
-  end_time    String
-  status      String   @default("SCHEDULED")
-  created_by  Int
+  id_lessons   Int       @id @default(autoincrement())
+  tutor_id     Int
+  subject_id   Int
+  lesson_date  DateTime
+  start_time   String
+  end_time     String
+  status       String    @default("SCHEDULED")
+  created_by   Int
   cancelled_by Int?
   cancelled_at DateTime?
-  homework    String?
-  attention   String?
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  homework     String?
+  attention    String?
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
 
   tutor             User    @relation("TutorLessons", fields: [tutor_id], references: [id_users])
   cancelled_by_user User?   @relation("LessonCanceller", fields: [cancelled_by], references: [id_users], onDelete: SetNull)
@@ -121,6 +121,7 @@ model Lesson {
   monthly_grades MonthlyGrade[]
   issues         LessonIssue[]
 
+  @@index([tutor_id, lesson_date])
   @@map("lessons")
 }
 
@@ -137,6 +138,8 @@ model Booking {
 
   attendance Attendance?
 
+  @@index([student_id])
+  @@index([lesson_id])
   @@map("bookings")
 }
 
@@ -205,16 +208,16 @@ model PasswordResetToken {
 }
 
 model LessonIssue {
-  id_lesson_issues Int       @id @default(autoincrement())
+  id_lesson_issues Int      @id @default(autoincrement())
   lesson_id        Int
   reporter_id      Int
   title            String
   description      String
-  status           String    @default("OPEN")
+  status           String   @default("OPEN")
   admin_note       String?
   resolved_by      Int?
-  created_at       DateTime  @default(now())
-  updated_at       DateTime  @updatedAt
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
 
   lesson   Lesson @relation(fields: [lesson_id], references: [id_lessons], onDelete: Cascade)
   reporter User   @relation("IssueReporter", fields: [reporter_id], references: [id_users], onDelete: Cascade)
@@ -244,15 +247,15 @@ model SubjectRequest {
 }
 
 model FinancialReport {
-  id_financial_reports Int      @id @default(autoincrement())
-  month                Int
-  year                 Int
-  generated_by_user_id Int
-  total_student_cost   Float
-  total_tutor_salary   Float
-  file_path            String?
-  details              String   @default("[]")
-  created_at           DateTime @default(now())
+  id_financial_reports     Int      @id @default(autoincrement())
+  month                    Int
+  year                     Int
+  generated_by_user_id     Int
+  total_student_cost_cents Int      @default(0)
+  total_tutor_salary_cents Int      @default(0)
+  file_path                String?
+  details                  String   @default("[]")
+  created_at               DateTime @default(now())
 
   generated_by User @relation(fields: [generated_by_user_id], references: [id_users])
 

@@ -13,6 +13,7 @@ import { SearchScheduleDto } from './dto/search-schedule.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
 import { CreateAdminLessonDto } from './dto/create-admin-lesson.dto';
 import { UpdateAdminLessonDto } from './dto/update-admin-lesson.dto';
+import { DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT } from '../common/pagination';
 
 @Injectable()
 export class BookingsService {
@@ -783,6 +784,7 @@ export class BookingsService {
         subject: true,
       },
       orderBy: [{ lesson_date: 'asc' }, { start_time: 'asc' }],
+      take: DEFAULT_LIST_LIMIT,
     });
   }
 
@@ -886,6 +888,7 @@ export class BookingsService {
           },
         },
         orderBy: { lesson: { lesson_date: 'asc' } },
+        take: DEFAULT_LIST_LIMIT,
       });
     }
 
@@ -921,6 +924,7 @@ export class BookingsService {
           attendance: true,
         },
         orderBy: { lesson: { lesson_date: 'asc' } },
+        take: DEFAULT_LIST_LIMIT,
       });
     }
 
@@ -939,6 +943,7 @@ export class BookingsService {
           },
         },
         orderBy: { lesson: { lesson_date: 'asc' } },
+        take: DEFAULT_LIST_LIMIT,
       });
     }
 
@@ -1047,6 +1052,8 @@ export class BookingsService {
         },
       },
       orderBy: [{ lesson_date: 'asc' }, { start_time: 'asc' }],
+      take: Math.min(query.limit ?? DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT),
+      skip: query.offset ?? 0,
     });
   }
 

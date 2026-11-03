@@ -129,3 +129,19 @@ Przed wprowadzaniem zmian utwórz osobny branch zamiast pracować bezpośrednio 
 ```powershell
 git switch -c nazwa-twojego-brancha
 ```
+
+## Bezpieczeństwo wdrożenia
+
+Sesja używa cookie `httpOnly`, `SameSite=Lax` i `Secure` w produkcji; żądania
+zmieniające dane wymagają ochrony CSRF. Używaj HTTPS, ogranicz `CORS_ORIGINS`
+do zaufanych adresów frontendu i ustaw `TRUST_PROXY` zgodnie z liczbą/adresami
+proxy w środowisku wdrożeniowym (lokalnie pozostaw `loopback`). Dokumentacja
+Swagger jest dostępna pod `/api/docs`.
+
+Jeśli `.env` był częścią udostępnionego ZIP-a, zmień hasło aplikacji SMTP u
+dostawcy i zaktualizuj `SMTP_PASSWORD` w sekretach środowiska. Wygeneruj też
+nowy `JWT_SECRET` poleceniem
+`node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`,
+ustaw go we wszystkich instancjach backendu i zrestartuj je. Stare sesje
+staną się nieważne. Przed archiwizacją wyklucz `.env`, `dist/`, `.git/` i
+`prisma/*.db`; root `.gitignore` zawiera odpowiednie reguły.

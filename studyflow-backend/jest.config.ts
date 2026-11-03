@@ -29,6 +29,14 @@ const config: Config = {
     'apps/**/*.(t|j)s',
   ],
   coverageDirectory: './coverage',
+  coverageThreshold: {
+    global: {
+      statements: 25,
+      branches: 25,
+      functions: 20,
+      lines: 25,
+    },
+  },
   testEnvironment: 'node',
 };
 

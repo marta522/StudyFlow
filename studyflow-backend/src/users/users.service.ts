@@ -8,6 +8,8 @@ import {
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
+import { fromCents, lessonCostInCents } from '../common/money';
+import { DEFAULT_LIST_LIMIT } from '../common/pagination';
 import { CreateManagedUserDto } from './dto/create-managed-user.dto';
 import { GenerateFinancialReportDto } from './dto/generate-financial-report.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -51,6 +53,7 @@ export class UsersService {
         status: true,
       },
       orderBy: [{ last_name: 'asc' }, { first_name: 'asc' }],
+      take: DEFAULT_LIST_LIMIT,
     });
   }
 
@@ -67,6 +70,7 @@ export class UsersService {
         role: { select: { name: true } },
       },
       orderBy: [{ role: { name: 'asc' } }, { last_name: 'asc' }],
+      take: DEFAULT_LIST_LIMIT,
     });
   }
 
@@ -169,7 +173,7 @@ export class UsersService {
         select: {
           tutor_id: true,
           subject_id: true,
-          price_per_hour: true,
+          price_per_hour_cents: true,
         },
       }),
       this.prisma.lesson.count({ where: { status: 'CANCELLED' } }),
@@ -223,13 +227,13 @@ export class UsersService {
     const rateByTutorAndSubject = new Map(
       rates.map((rate) => [
         `${rate.tutor_id}:${rate.subject_id}`,
-        Number(rate.price_per_hour),
+        rate.price_per_hour_cents,
       ]),
     );
     const year = new Date().getUTCFullYear();
     const monthlyRevenue = Array.from({ length: 12 }, (_, month) => ({
       month: month + 1,
-      revenue: 0,
+      revenueCents: 0,
     }));
     const lessonCountsBySubject = new Map<string, number>();
 
@@ -242,13 +246,16 @@ export class UsersService {
 
       const [startHour, startMinute] = lesson.start_time.split(':').map(Number);
       const [endHour, endMinute] = lesson.end_time.split(':').map(Number);
-      const durationHours =
-        (endHour * 60 + endMinute - startHour * 60 - startMinute) / 60;
-      const rate =
+      const durationMinutes =
+        endHour * 60 + endMinute - startHour * 60 - startMinute;
+      const rateCents =
         rateByTutorAndSubject.get(`${lesson.tutor_id}:${lesson.subject_id}`) ??
         0;
       const monthIndex = lesson.lesson_date.getUTCMonth();
-      monthlyRevenue[monthIndex].revenue += durationHours * rate;
+      monthlyRevenue[monthIndex].revenueCents += lessonCostInCents(
+        rateCents,
+        durationMinutes,
+      );
     }
 
     const totalLessonsBySubject = [...lessonCountsBySubject.values()].reduce(
@@ -337,8 +344,8 @@ export class UsersService {
         )
         .slice(0, 10),
       monthlyRevenue: monthlyRevenue.map((item) => ({
-        ...item,
-        revenue: Math.round(item.revenue * 100) / 100,
+        month: item.month,
+        revenue: fromCents(item.revenueCents),
       })),
       lessonsBySubject,
       completedLessonCount: lessons.length,
@@ -499,6 +506,7 @@ export class UsersService {
         },
       },
       orderBy: [{ year: 'desc' }, { month: 'desc' }, { created_at: 'desc' }],
+      take: DEFAULT_LIST_LIMIT,
     });
     return reports.map((report) => {
       const details = this.parseFinancialReportDetails(report.details);
@@ -509,8 +517,15 @@ export class UsersService {
           ? [detail.lesson_id]
           : [],
       );
+      const {
+        total_student_cost_cents,
+        total_tutor_salary_cents,
+        ...reportData
+      } = report;
       return {
-        ...report,
+        ...reportData,
+        total_student_cost: fromCents(total_student_cost_cents),
+        total_tutor_salary: fromCents(total_tutor_salary_cents),
         details,
         lesson_count: new Set(lessonIds).size,
       };
@@ -531,9 +546,16 @@ export class UsersService {
     }
 
     const details = this.parseFinancialReportDetails(report.details);
+    const {
+      total_student_cost_cents,
+      total_tutor_salary_cents,
+      ...reportData
+    } = report;
 
     return {
-      ...report,
+      ...reportData,
+      total_student_cost: fromCents(total_student_cost_cents),
+      total_tutor_salary: fromCents(total_tutor_salary_cents),
       details,
       lesson_count: details.length,
     };
@@ -578,32 +600,44 @@ export class UsersService {
           in: [...new Set(lessons.map((lesson) => lesson.subject_id))],
         },
       },
-      select: { tutor_id: true, subject_id: true, price_per_hour: true },
+      select: {
+        tutor_id: true,
+        subject_id: true,
+        price_per_hour_cents: true,
+      },
     });
     const rates = new Map(
       offers.map((offer) => [
         `${offer.tutor_id}:${offer.subject_id}`,
-        Number(offer.price_per_hour),
+        offer.price_per_hour_cents,
       ]),
     );
 
-    let totalStudentCost = 0;
-    let totalTutorSalary = 0;
+    let totalStudentCostCents = 0;
+    let totalTutorSalaryCents = 0;
     const details = lessons.flatMap((lesson) => {
       const [startHour, startMinute] = lesson.start_time.split(':').map(Number);
       const [endHour, endMinute] = lesson.end_time.split(':').map(Number);
-      const durationHours =
-        (endHour * 60 + endMinute - startHour * 60 - startMinute) / 60;
-      const hourlyRate = rates.get(`${lesson.tutor_id}:${lesson.subject_id}`);
-      if (hourlyRate === undefined || durationHours <= 0) {
+      const durationMinutes =
+        endHour * 60 + endMinute - startHour * 60 - startMinute;
+      const hourlyRateCents = rates.get(
+        `${lesson.tutor_id}:${lesson.subject_id}`,
+      );
+      if (hourlyRateCents === undefined || durationMinutes <= 0) {
         throw new ConflictException(
           `Brak prawidłowej stawki dla lekcji ${lesson.id_lessons}.`,
         );
       }
-      const studentCost = durationHours * hourlyRate;
-      const tutorSalary = studentCost * 0.8;
-      totalStudentCost += studentCost * lesson.bookings.length;
-      totalTutorSalary += tutorSalary * lesson.bookings.length;
+      const studentCostCents = lessonCostInCents(
+        hourlyRateCents,
+        durationMinutes,
+      );
+      const tutorSalaryCents = Math.round(studentCostCents * 0.8);
+      totalStudentCostCents += studentCostCents * lesson.bookings.length;
+      totalTutorSalaryCents += tutorSalaryCents * lesson.bookings.length;
+      const hourlyRate = fromCents(hourlyRateCents);
+      const studentCost = fromCents(studentCostCents);
+      const tutorSalary = fromCents(tutorSalaryCents);
 
       return lesson.bookings.map((booking) => ({
         lesson_id: lesson.id_lessons,
@@ -613,21 +647,20 @@ export class UsersService {
         subject: lesson.subject.name,
         tutor: `${lesson.tutor.first_name} ${lesson.tutor.last_name}`,
         student: `${booking.student.first_name} ${booking.student.last_name}`,
-        duration_hours: durationHours,
+        duration_hours: durationMinutes / 60,
         hourly_rate: hourlyRate,
         student_cost: studentCost,
         tutor_salary: tutorSalary,
       }));
     });
-    const roundCurrency = (value: number) => Math.round(value * 100) / 100;
     const report = await this.prisma.$transaction(async (tx) => {
       const financialReport = await tx.financialReport.create({
         data: {
           month,
           year,
           generated_by_user_id: adminId,
-          total_student_cost: roundCurrency(totalStudentCost),
-          total_tutor_salary: roundCurrency(totalTutorSalary),
+          total_student_cost_cents: totalStudentCostCents,
+          total_tutor_salary_cents: totalTutorSalaryCents,
           details: JSON.stringify(details),
         },
       });
@@ -643,10 +676,15 @@ export class UsersService {
       return financialReport;
     });
 
+    const {
+      total_student_cost_cents,
+      total_tutor_salary_cents,
+      ...reportData
+    } = report;
     return {
-      ...report,
-      total_student_cost: roundCurrency(totalStudentCost),
-      total_tutor_salary: roundCurrency(totalTutorSalary),
+      ...reportData,
+      total_student_cost: fromCents(total_student_cost_cents),
+      total_tutor_salary: fromCents(total_tutor_salary_cents),
       lesson_count: lessons.length,
       details,
     };

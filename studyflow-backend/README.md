@@ -1,7 +1,8 @@
 # StudyFlow API
 
 Backend API for StudyFlow, built with NestJS, Prisma, and SQLite. API routes
-use the `/api` prefix and protected routes require a bearer access token.
+use the `/api` prefix. Authentication uses an `httpOnly` session cookie and a
+CSRF token on state-changing requests.
 Use Node.js 24.15 or newer.
 
 ## Run locally
@@ -48,7 +49,15 @@ intended for a single API instance. Lesson dates and start times use
 `GET /api/health` is a liveness check. Set `CORS_ORIGINS` to the exact
 comma-separated frontend origins in deployment; the default allows only
 `http://localhost:5173`.
-Access tokens expire after one hour; users need to sign in again after expiry.
+Session cookies expire after one hour; users need to sign in again after expiry.
+The cookie is `SameSite=Lax`, and is `Secure` in production. Keep the frontend
+and API same-site, enable credentialed CORS only for exact trusted origins, and
+use HTTPS in production.
+Swagger documentation is available at `/api/docs`.
+
+Tutor prices and financial report totals are stored as integer groszy. Apply
+the migration with `npx prisma migrate deploy`; it converts existing monetary
+values to cents and adds schedule/booking indexes.
 
 The application does not automatically seed or delete database records. The
 Prisma seed script is destructive and must only be run when intentionally
@@ -62,8 +71,9 @@ transferred to SQLite.
 
 | Method | Route | Access | Description |
 | --- | --- | --- | --- |
+| `GET` | `/api/auth/csrf` | Public | Returns a CSRF token required in `X-CSRF-Token` for state-changing requests. |
 | `POST` | `/api/auth/register` | Public | Creates a student or tutor account. |
-| `POST` | `/api/auth/login` | Public | Authenticates and returns an access token. |
+| `POST` | `/api/auth/login` | Public | Authenticates and sets the session cookie. |
 | `POST` | `/api/auth/request-password-reset` | Public | Sends a time-limited password reset link when the email belongs to an active account. |
 | `POST` | `/api/auth/reset-password` | Public | Changes the password using a valid, single-use reset token. |
 | `POST` | `/api/auth/logout` | Authenticated | Invalidates all of the user's active tokens. |
@@ -173,7 +183,35 @@ the dataset. The base reset seed also creates `admin@studyflow.pl`,
 npm run build
 npm run lint
 npm test
+npm run test:cov
+npm run test:e2e
 ```
+
+Coverage thresholds are enforced by `test:cov`.
+
+## Rotate exposed credentials
+
+If an archive containing `.env` was shared, assume its SMTP password and
+`JWT_SECRET` are compromised even if `.env` is ignored by Git:
+
+1. Revoke/change the SMTP application password with the provider. Update
+   `SMTP_PASSWORD` in the deployment secret store and restart every API instance.
+2. Generate a fresh `JWT_SECRET` with
+   `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`.
+   Set it in every environment and restart the API; all existing JWT sessions
+   will become invalid and users must sign in again.
+3. Never include `.env`, `dist/`, `.git/` or `prisma/*.db` in an archive. Inspect
+   the ZIP contents before sharing. For a committed revision, run:
+
+   ```powershell
+   git archive --format=zip --output=StudyFlow.zip HEAD
+   ```
+
+   This includes tracked files only and excludes local ignored files and `.git`.
+
+The root `.gitignore` excludes environment files, build output, editor-agent
+folders, and SQLite database files. Do not rely on ignore rules as a substitute
+for rotating credentials that may already have been exposed.
 
 ## Migrations
 

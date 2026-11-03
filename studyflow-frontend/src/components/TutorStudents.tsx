@@ -13,12 +13,13 @@ import {
 } from "lucide-react";
 import {
   useCallback,
-  useEffect,
   useMemo,
   useState,
   type FormEvent,
 } from "react";
 import api from "../api/axios";
+import { useAuth } from "../context/useAuth";
+import { useBookings } from "../hooks/useBookings";
 
 interface Person {
   id_users: number;
@@ -113,8 +114,14 @@ function formatLessonDate(date: string): string {
 }
 
 export function TutorStudents() {
-  const [bookings, setBookings] = useState<Booking[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const bookingsQuery = useBookings<Booking>(user?.id);
+  const bookings = (bookingsQuery.data ?? []).filter(
+    (booking) => booking.status !== "CANCELLED",
+  );
+  const { refetch: refetchBookings, error: bookingsError } = bookingsQuery;
+  const [refreshing, setRefreshing] = useState(false);
+  const loading = bookingsQuery.isPending || refreshing;
   const [error, setError] = useState<string | null>(null);
   const [studentSearch, setStudentSearch] = useState("");
   const [gradeStudent, setGradeStudent] = useState<Person | null>(null);
@@ -138,29 +145,11 @@ export function TutorStudents() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const loadBookings = useCallback(async () => {
-    const { data } = await api.get<Booking[]>("/bookings/my-bookings");
-    setBookings(data.filter((booking) => booking.status !== "CANCELLED"));
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    void api
-      .get<Booking[]>("/bookings/my-bookings")
-      .then(({ data }) => {
-        if (!cancelled) {
-          setBookings(data.filter((booking) => booking.status !== "CANCELLED"));
-        }
-      })
-      .catch((requestError: unknown) => {
-        if (!cancelled) setError(getErrorMessage(requestError));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    await refetchBookings({ throwOnError: true });
+  }, [refetchBookings]);
+  const displayError =
+    error ??
+    (bookingsError ? getErrorMessage(bookingsError) : null);
 
   const students = useMemo(() => {
     const byId = new Map<number, Person>();
@@ -249,14 +238,14 @@ export function TutorStudents() {
   );
 
   async function refresh() {
-    setLoading(true);
+    setRefreshing(true);
     setError(null);
     try {
       await loadBookings();
     } catch (requestError: unknown) {
       setError(getErrorMessage(requestError));
     } finally {
-      setLoading(false);
+      setRefreshing(false);
     }
   }
 
@@ -348,12 +337,12 @@ export function TutorStudents() {
           Odśwież
         </button>
       </div>
-      {error && (
+      {displayError && (
         <p
           role="alert"
           className="rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-300"
         >
-          {error}
+          {displayError}
         </p>
       )}
       {notice && (

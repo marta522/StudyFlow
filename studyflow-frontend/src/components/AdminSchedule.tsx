@@ -11,15 +11,18 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "../api/axios";
 import { downloadCsv } from "../utils/csv";
+import { formatDateLong } from "../utils/date";
+import { AdminLessonDetailsDialog } from "./AdminLessonDetailsDialog";
 
 interface Subject {
   id_subjects: number;
   name: string;
 }
 
-interface ScheduleLesson {
+export interface ScheduleLesson {
   id_lessons: number;
   tutor_id: number;
   subject_id: number;
@@ -81,16 +84,6 @@ function getErrorMessage(error: unknown): string {
   return "Nie udało się pobrać harmonogramu.";
 }
 
-function formatDate(date: string): string {
-  const [year, month, day] = date.slice(0, 10).split("-").map(Number);
-  return new Intl.DateTimeFormat("pl-PL", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(new Date(year, month - 1, day));
-}
-
 function dateKey(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -108,10 +101,41 @@ function mondayForDate(value: string): Date | null {
 }
 
 export function AdminSchedule() {
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [offeredSubjects, setOfferedSubjects] = useState<ManagedSubject[]>([]);
-  const [users, setUsers] = useState<ManagedUser[]>([]);
-  const [lessons, setLessons] = useState<ScheduleLesson[]>([]);
+  const queryClient = useQueryClient();
+  const [scheduleParams, setScheduleParams] = useState<Record<string, string>>(
+    {},
+  );
+  const scheduleQuery = useQuery({
+    queryKey: ["admin-schedule", "lessons", scheduleParams],
+    queryFn: async () => {
+      const { data } = await api.get<ScheduleLesson[]>("/bookings/schedule", {
+        params: scheduleParams,
+      });
+      return data;
+    },
+    staleTime: 30_000,
+  });
+  const optionsQuery = useQuery({
+    queryKey: ["admin-schedule", "options"],
+    queryFn: async () => {
+      const [subjectResponse, managedSubjectResponse, userResponse] =
+        await Promise.all([
+          api.get<Subject[]>("/subjects"),
+          api.get<ManagedSubject[]>("/subjects/admin"),
+          api.get<ManagedUser[]>("/users"),
+        ]);
+      return {
+        subjects: subjectResponse.data,
+        offeredSubjects: managedSubjectResponse.data,
+        users: userResponse.data,
+      };
+    },
+    staleTime: 30_000,
+  });
+  const subjects = optionsQuery.data?.subjects ?? [];
+  const offeredSubjects = optionsQuery.data?.offeredSubjects ?? [];
+  const users = optionsQuery.data?.users ?? [];
+  const lessons = scheduleQuery.data ?? [];
   const [lessonForm, setLessonForm] = useState<LessonForm>(EMPTY_FORM);
   const [editingLessonId, setEditingLessonId] = useState<number | null>(null);
   const [savingLesson, setSavingLesson] = useState(false);
@@ -136,8 +160,10 @@ export function AdminSchedule() {
   );
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const dialogTitleRef = useRef<HTMLHeadingElement>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const loading = scheduleQuery.isFetching || optionsQuery.isFetching;
+  const queryError = scheduleQuery.error ?? optionsQuery.error;
+  const error = searchError ?? (queryError ? getErrorMessage(queryError) : null);
   const filteredLessons = lessons.filter(
     (lesson) => !statusFilter || lesson.status === statusFilter,
   );
@@ -205,61 +231,33 @@ export function AdminSchedule() {
     params: Record<string, string> = {},
     includeStatus = true,
   ) {
-    setLoading(true);
-    setError(null);
+    const nextParams = {
+      ...params,
+      ...(includeStatus && statusFilter && { status: statusFilter }),
+    };
+    setScheduleParams(nextParams);
+    setSearchError(null);
     try {
-      const { data } = await api.get<ScheduleLesson[]>("/bookings/schedule", {
-        params: {
-          ...params,
-          ...(includeStatus && statusFilter && { status: statusFilter }),
+      await queryClient.fetchQuery({
+        queryKey: ["admin-schedule", "lessons", nextParams],
+        queryFn: async () => {
+          const { data } = await api.get<ScheduleLesson[]>(
+            "/bookings/schedule",
+            { params: nextParams },
+          );
+          return data;
         },
+        staleTime: 30_000,
       });
-      setLessons(data);
     } catch (requestError: unknown) {
-      setError(getErrorMessage(requestError));
-      setLessons([]);
-    } finally {
-      setLoading(false);
+      setSearchError(getErrorMessage(requestError));
     }
   }
-
-  useEffect(() => {
-    let cancelled = false;
-    void Promise.all([
-      api.get<Subject[]>("/subjects"),
-      api.get<ScheduleLesson[]>("/bookings/schedule"),
-      api.get<ManagedSubject[]>("/subjects/admin"),
-      api.get<ManagedUser[]>("/users"),
-    ])
-      .then(
-        ([
-          subjectResponse,
-          lessonResponse,
-          managedSubjectResponse,
-          userResponse,
-        ]) => {
-          if (cancelled) return;
-          setSubjects(subjectResponse.data);
-          setLessons(lessonResponse.data);
-          setOfferedSubjects(managedSubjectResponse.data);
-          setUsers(userResponse.data);
-        },
-      )
-      .catch((requestError: unknown) => {
-        if (!cancelled) setError(getErrorMessage(requestError));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   function handleSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (from && to && from > to) {
-      setError("Data początkowa nie może być późniejsza od daty końcowej.");
+      setSearchError("Data początkowa nie może być późniejsza od daty końcowej.");
       return;
     }
     const params: Record<string, string> = {};
@@ -275,11 +273,11 @@ export function AdminSchedule() {
   async function handleSaveLesson(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (lessonForm.start_time >= lessonForm.end_time) {
-      setError("Godzina zakończenia musi być późniejsza niż rozpoczęcia.");
+      setSearchError("Godzina zakończenia musi być późniejsza niż rozpoczęcia.");
       return;
     }
     setSavingLesson(true);
-    setError(null);
+    setSearchError(null);
     try {
       const payload = {
         tutor_id: Number(lessonForm.tutor_id),
@@ -298,9 +296,12 @@ export function AdminSchedule() {
       }
       setLessonForm(EMPTY_FORM);
       setEditingLessonId(null);
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-schedule", "lessons"],
+      });
       await searchLessons();
     } catch (requestError: unknown) {
-      setError(getErrorMessage(requestError));
+      setSearchError(getErrorMessage(requestError));
     } finally {
       setSavingLesson(false);
     }
@@ -328,12 +329,15 @@ export function AdminSchedule() {
       ? `Odwołać lekcję ${lesson?.subject.name} dla ${students}?\n\nWszyscy uczniowie i korepetytor otrzymają powiadomienie, a powiązane rezerwacje zostaną anulowane.`
       : `Odwołać wolny termin ${lesson?.subject.name}?\n\nKorepetytor otrzyma powiadomienie.`;
     if (!window.confirm(message)) return;
-    setError(null);
+    setSearchError(null);
     try {
       await api.delete(`/bookings/admin/lessons/${lessonId}`);
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-schedule", "lessons"],
+      });
       await searchLessons();
     } catch (requestError: unknown) {
-      setError(getErrorMessage(requestError));
+      setSearchError(getErrorMessage(requestError));
     }
   }
 
@@ -808,7 +812,7 @@ export function AdminSchedule() {
               return (
                 <section
                   key={dayKey}
-                  aria-label={formatDate(dayKey)}
+                  aria-label={formatDateLong(dayKey)}
                   aria-current={isToday ? "date" : undefined}
                   className={`min-h-36 rounded-xl border bg-brand-card p-3 ${
                     isToday
@@ -892,7 +896,7 @@ export function AdminSchedule() {
                       onClick={() => openLessonDetails(lesson)}
                       className="text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-yellow"
                     >
-                      <p>{formatDate(lesson.lesson_date)}</p>
+                      <p>{formatDateLong(lesson.lesson_date)}</p>
                       <p className="mt-1 text-xs text-brand-textMuted">
                         {lesson.start_time}–{lesson.end_time}
                       </p>
@@ -955,68 +959,11 @@ export function AdminSchedule() {
           </table>
         </div>
       )}
-      {selectedLesson && (
-        <div
-          className="fixed inset-0 z-[60] grid place-items-center bg-black/70 p-4"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) closeLessonDetails();
-          }}
-        >
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="admin-lesson-details-title"
-            className="w-full max-w-lg space-y-4 rounded-2xl border border-brand-cardBorder bg-brand-card p-6 shadow-2xl"
-          >
-            <h2
-              id="admin-lesson-details-title"
-              ref={dialogTitleRef}
-              tabIndex={-1}
-              className="text-xl font-bold text-white"
-            >
-              {selectedLesson.subject.name}
-            </h2>
-            <p className="text-sm text-brand-textMuted">
-              {formatDate(selectedLesson.lesson_date)} ·{" "}
-              {selectedLesson.start_time}–{selectedLesson.end_time}
-            </p>
-            <p className="text-sm text-brand-textMuted">
-              Korepetytor: {selectedLesson.tutor.first_name}{" "}
-              {selectedLesson.tutor.last_name}
-            </p>
-            <p className="text-sm text-brand-textMuted">
-              Uczniowie:{" "}
-              {selectedLesson.bookings.length > 0
-                ? selectedLesson.bookings
-                    .map(
-                      ({ student }) =>
-                        `${student.first_name} ${student.last_name}`,
-                    )
-                    .join(", ")
-                : "Wolny termin"}
-            </p>
-            <p className="text-sm text-brand-textMuted">
-              Status: {selectedLesson.status}
-            </p>
-            {selectedLesson.cancelled_at && (
-              <p className="text-sm text-red-300">
-                Odwołano{" "}
-                {new Date(selectedLesson.cancelled_at).toLocaleString("pl-PL")}
-                {selectedLesson.cancelled_by_user &&
-                  ` przez ${selectedLesson.cancelled_by_user.first_name} ${selectedLesson.cancelled_by_user.last_name}`}
-              </p>
-            )}
-            <button
-              type="button"
-              onClick={closeLessonDetails}
-              className="rounded-lg bg-brand-yellow px-4 py-2 font-semibold text-brand-black"
-            >
-              Zamknij
-            </button>
-          </section>
-        </div>
-      )}
+      <AdminLessonDetailsDialog
+        lesson={selectedLesson}
+        headingRef={dialogTitleRef}
+        onClose={closeLessonDetails}
+      />
     </section>
   );
 }

@@ -1,8 +1,9 @@
 import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { LessonIssueStatus } from '../../common/statuses';
 
 export class UpdateLessonIssueDto {
-  @IsIn(['OPEN', 'IN_PROGRESS', 'RESOLVED'])
-  status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED';
+  @IsIn(Object.values(LessonIssueStatus))
+  status: (typeof LessonIssueStatus)[keyof typeof LessonIssueStatus];
 
   @IsOptional()
   @IsString()

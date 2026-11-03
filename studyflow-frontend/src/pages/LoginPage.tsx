@@ -7,7 +7,6 @@ import type { User } from "../context/auth-context";
 import { useAuth } from "../context/useAuth";
 
 interface LoginResponse {
-  access_token: string;
   user: User;
 }
 
@@ -64,7 +63,7 @@ export function LoginPage() {
         email,
         password,
       });
-      login(data.access_token, data.user);
+      login(data.user);
       navigate("/dashboard", { replace: true });
     } catch (requestError: unknown) {
       setError(getLoginError(requestError));

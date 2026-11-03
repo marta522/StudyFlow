@@ -6,7 +6,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import api from "../api/axios";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import api, { clearCsrfToken } from "../api/axios";
 import { AuthContext } from "./auth-context";
 import type { User } from "./auth-context";
 
@@ -25,75 +26,46 @@ function getErrorMessage(error: unknown): string {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(() =>
-    localStorage.getItem("token"),
-  );
-  const [loading, setLoading] = useState(() => Boolean(token));
-  const [authError, setAuthError] = useState<string | null>(null);
-
+  const queryClient = useQueryClient();
+  const [authEnabled, setAuthEnabled] = useState(true);
   useEffect(() => {
-    if (!token) {
-      return;
-    }
-
-    let cancelled = false;
-
-    api
-      .get<User>("/auth/profile")
-      .then(({ data }) => {
-        if (!cancelled) {
-          setUser(data);
-        }
-      })
-      .catch((error: unknown) => {
-        if (cancelled) {
-          return;
-        }
-
-        if (
-          axios.isAxiosError(error) &&
-          (error.response?.status === 401 || error.response?.status === 403)
-        ) {
-          localStorage.removeItem("token");
-          setLoading(false);
-          setToken(null);
-          setUser(null);
-          return;
-        }
-
-        setAuthError(getErrorMessage(error));
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
-
-  const login = useCallback((newToken: string, newUser: User) => {
-    localStorage.setItem("token", newToken);
-    setAuthError(null);
-    setUser(newUser);
-    setLoading(false);
-    setToken(newToken);
+    localStorage.removeItem("token");
   }, []);
+  const profileQuery = useQuery({
+    queryKey: ["auth", "profile"],
+    queryFn: async () => {
+      const { data } = await api.get<User>("/auth/profile");
+      return data;
+    },
+    enabled: authEnabled,
+    retry: false,
+    staleTime: 30_000,
+  });
+  const user = profileQuery.data ?? null;
+  const loading = authEnabled && profileQuery.isPending;
+  const authError =
+    profileQuery.error &&
+    !(
+      axios.isAxiosError(profileQuery.error) &&
+      [401, 403].includes(profileQuery.error.response?.status ?? 0)
+    )
+      ? getErrorMessage(profileQuery.error)
+      : null;
+
+  const login = useCallback((newUser: User) => {
+    setAuthEnabled(true);
+    queryClient.setQueryData(["auth", "profile"], newUser);
+  }, [queryClient]);
 
   const logout = useCallback(() => {
-    localStorage.removeItem("token");
-    setAuthError(null);
-    setUser(null);
-    setLoading(false);
-    setToken(null);
-  }, []);
+    setAuthEnabled(false);
+    clearCsrfToken();
+    queryClient.removeQueries({ queryKey: ["auth", "profile"] });
+  }, [queryClient]);
 
   const value = useMemo(
-    () => ({ user, token, loading, authError, login, logout }),
-    [user, token, loading, authError, login, logout],
+    () => ({ user, loading, authError, login, logout }),
+    [user, loading, authError, login, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

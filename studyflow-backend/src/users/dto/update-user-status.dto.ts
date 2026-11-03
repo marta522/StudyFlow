@@ -1,6 +1,7 @@
 import { IsIn } from 'class-validator';
+import { UserStatus, type UserStatusValue } from '../../common/statuses';
 
 export class UpdateUserStatusDto {
-  @IsIn(['ACTIVE', 'BLOCKED'])
-  status: 'ACTIVE' | 'BLOCKED';
+  @IsIn(Object.values(UserStatus))
+  status: UserStatusValue;
 }

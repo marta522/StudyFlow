@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { DEFAULT_LIST_LIMIT } from '../common/pagination';
 import { CreateLessonIssueDto } from './dto/create-lesson-issue.dto';
 import { UpdateLessonIssueDto } from './dto/update-lesson-issue.dto';
 
@@ -127,7 +128,7 @@ export class LessonIssuesService {
         },
       },
       orderBy: [{ status: 'asc' }, { created_at: 'desc' }],
-      take: 200,
+      take: DEFAULT_LIST_LIMIT,
     });
   }
 

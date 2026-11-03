@@ -1,0 +1,9 @@
+.env
+**/.env
+dist/
+**/dist/
+**/.devin/
+**/.cursor/
+**/.agents/
+**/prisma/*.db
+**/prisma/*.db-journal

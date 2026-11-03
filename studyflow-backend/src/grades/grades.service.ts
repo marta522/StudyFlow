@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { DEFAULT_LIST_LIMIT } from '../common/pagination';
 import { CreateGradeDto } from './dto/create-grade.dto';
 
 @Injectable()
@@ -128,6 +129,7 @@ export class GradesService {
         lesson: { select: { lesson_date: true } },
       },
       orderBy: { created_at: 'desc' },
+      take: DEFAULT_LIST_LIMIT,
     });
   }
 }

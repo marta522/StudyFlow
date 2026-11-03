@@ -15,25 +15,14 @@ import {
   UserX,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Fragment } from "react";
 import api from "../api/axios";
+import { useUsers, type UserItem, type UserRole, type UserStatus } from "../hooks/useUsers";
 import { downloadCsv } from "../utils/csv";
 import { formatDateOnly } from "../utils/date";
 
-type UserStatus = "ACTIVE" | "BLOCKED";
-type UserRole = "student" | "tutor";
 type RoleFilter = "all" | UserRole;
-
-interface UserItem {
-  id_users: number;
-  first_name: string;
-  last_name: string;
-  email: string;
-  phone: string | null;
-  status: UserStatus;
-  role: { name: UserRole };
-}
 
 interface UserActivity {
   user: {
@@ -127,8 +116,10 @@ function formatActivityAction(action: string): string {
 }
 
 export function UserManagement() {
-  const [users, setUsers] = useState<UserItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const usersQuery = useUsers();
+  const { users, setUsers, fetchUsers } = usersQuery;
+  const [refreshing, setRefreshing] = useState(false);
+  const loading = usersQuery.loading || refreshing;
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -157,34 +148,14 @@ export function UserManagement() {
   });
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-
-  const fetchUsers = useCallback(async () => {
-    const { data } = await api.get<UserItem[]>("/users");
-    setUsers(data);
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    void api
-      .get<UserItem[]>("/users")
-      .then(({ data }) => {
-        if (!cancelled) setUsers(data);
-      })
-      .catch((requestError: unknown) => {
-        if (!cancelled) {
-          setError(
-            getErrorMessage(requestError, "Nie udało się pobrać użytkowników."),
-          );
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const displayError =
+    error ??
+    (usersQuery.error
+      ? getErrorMessage(
+          usersQuery.error,
+          "Nie udało się pobrać użytkowników.",
+        )
+      : null);
 
   useEffect(() => {
     if (expandedActivityId === null) return;
@@ -410,14 +381,14 @@ export function UserManagement() {
   }
 
   async function refreshUsers() {
-    setLoading(true);
+    setRefreshing(true);
     setError(null);
     try {
       await fetchUsers();
     } catch (requestError: unknown) {
       setError(getErrorMessage(requestError, "Nie udało się odświeżyć listy."));
     } finally {
-      setLoading(false);
+      setRefreshing(false);
     }
   }
 
@@ -532,12 +503,12 @@ export function UserManagement() {
           {notice}
         </p>
       )}
-      {error && (
+      {displayError && (
         <p
           className="rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-300"
           role="alert"
         >
-          {error}
+          {displayError}
         </p>
       )}
 
@@ -653,7 +624,7 @@ export function UserManagement() {
         <p role="status" className="py-8 text-brand-textMuted">
           Ładowanie użytkowników…
         </p>
-      ) : !error && filteredUsers.length === 0 ? (
+      ) : !displayError && filteredUsers.length === 0 ? (
         <p className="rounded-2xl border border-brand-cardBorder bg-brand-card p-8 text-center text-brand-textMuted">
           Brak użytkowników dla wybranego filtra.
         </p>

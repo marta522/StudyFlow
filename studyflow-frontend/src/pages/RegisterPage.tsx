@@ -7,7 +7,6 @@ import type { User } from "../context/auth-context";
 import { useAuth } from "../context/useAuth";
 
 interface RegisterResponse {
-  access_token: string;
   user: User;
 }
 
@@ -59,7 +58,7 @@ export function RegisterPage() {
         role,
       });
 
-      login(data.access_token, data.user);
+      login(data.user);
       navigate("/dashboard", { replace: true });
     } catch (requestError: unknown) {
       setError(getRegisterError(requestError));

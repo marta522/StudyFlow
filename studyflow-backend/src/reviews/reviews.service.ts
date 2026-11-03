@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { DEFAULT_LIST_LIMIT } from '../common/pagination';
 import { CreateReviewDto } from './dto/create-review.dto';
 
 @Injectable()
@@ -30,6 +31,7 @@ export class ReviewsService {
         student: { select: { first_name: true, last_name: true } },
       },
       orderBy: { created_at: 'desc' },
+      take: DEFAULT_LIST_LIMIT,
     });
   }
 

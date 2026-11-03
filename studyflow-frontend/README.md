@@ -4,8 +4,8 @@
 
 ## 🛠️ Stos technologiczny
 
-- **Backend**: NestJS, TypeScript, Prisma ORM, SQLite, JWT, Bcrypt
-- **Frontend**: React, TypeScript, Vite, Tailwind CSS, Lucide Icons, Axios
+- **Backend**: NestJS, TypeScript, Prisma ORM, SQLite, JWT cookies, Swagger, Bcrypt
+- **Frontend**: React, TypeScript, Vite, Tailwind CSS, Lucide Icons, Axios, TanStack Query, Vitest
 
 ## 📋 Wymagania wstępne
 
@@ -148,3 +148,39 @@ Jeśli chcesz wprowadzać zmiany w projekcie, utwórz osobny branch zamiast prac
 ```bash
 git switch -c nazwa-twojego-brancha
 ```
+
+## 🔐 Bezpieczeństwo i wdrożenie
+
+Sesja jest przechowywana w cookie `httpOnly`, `SameSite=Lax` i — w produkcji —
+`Secure`. Frontend wysyła żądania z credentials; backend wymaga tokenu CSRF w
+nagłówku przy żądaniach zmieniających dane. Wdrożenie powinno używać HTTPS, a
+frontend i API powinny być w tej samej witrynie (same-site), z dokładnymi
+adresami frontendu w `CORS_ORIGINS`.
+
+Jeśli SMTP-hasło lub `JWT_SECRET` mogły znaleźć się w udostępnionym archiwum,
+traktuj je jako ujawnione:
+
+1. Zmień/odwołaj hasło aplikacji u dostawcy SMTP, zaktualizuj `SMTP_PASSWORD` w
+   sekretach środowiska i uruchom ponownie wszystkie instancje backendu.
+2. Wygeneruj nowy sekret poleceniem
+   `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`,
+   ustaw go jako `JWT_SECRET` w każdym środowisku i uruchom ponownie backend.
+   Stare sesje przestaną działać, użytkownicy będą musieli zalogować się ponownie.
+3. Nie umieszczaj sekretów w ZIP-ie. Przed wysłaniem sprawdź jego zawartość;
+   wyklucz `.env`, `dist/`, `.git/`, `prisma/*.db` i pliki pomocnicze. Dla
+   archiwum zatwierdzonej wersji repozytorium użyj:
+
+   ```powershell
+   git archive --format=zip --output=StudyFlow.zip HEAD
+   ```
+
+   Polecenie nie dołącza lokalnych, ignorowanych plików ani katalogu `.git`.
+
+Przy wdrożeniu za Nginx/Render ustaw `TRUST_PROXY` na liczbę zaufanych proxy lub
+ich adres/range. Pozostaw `loopback` dla lokalnego uruchomienia; nie ustawiaj
+bez potrzeby `true` ani zaufania do niezaufanych proxy, bo rate limiting
+korzysta z adresu klienta.
+
+Dokumentacja Swagger jest dostępna pod `/api/docs`. Ceny i raporty finansowe
+przechowują całe grosze; migracja przelicza istniejące wartości z dwóch miejsc
+po przecinku. Testy frontend uruchamiaj przez `npm test`.

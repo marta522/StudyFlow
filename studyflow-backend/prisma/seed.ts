@@ -145,25 +145,25 @@ async function main() {
       {
         tutor_id: tutor1.id_users,
         subject_id: math.id_subjects,
-        price_per_hour: 70,
+        price_per_hour_cents: 7000,
         experience_years: 5,
       },
       {
         tutor_id: tutor1.id_users,
         subject_id: programming.id_subjects,
-        price_per_hour: 90,
+        price_per_hour_cents: 9000,
         experience_years: 4,
       },
       {
         tutor_id: tutor2.id_users,
         subject_id: english.id_subjects,
-        price_per_hour: 60,
+        price_per_hour_cents: 6000,
         experience_years: 8,
       },
       {
         tutor_id: tutor2.id_users,
         subject_id: physics.id_subjects,
-        price_per_hour: 75,
+        price_per_hour_cents: 7500,
         experience_years: 6,
       },
     ],
@@ -372,8 +372,8 @@ async function main() {
       month: now.getMonth() + 1,
       year: now.getFullYear(),
       generated_by_user_id: admin.id_users,
-      total_student_cost: 2950,
-      total_tutor_salary: 2360,
+      total_student_cost_cents: 295000,
+      total_tutor_salary_cents: 236000,
     },
   });
 

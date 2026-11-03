@@ -1,12 +1,15 @@
 import {
-  IsEnum,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
   Matches,
   MaxLength,
 } from 'class-validator';
-import { SubjectStatus } from '../subject-status.enum';
+import {
+  SubjectStatus,
+  type SubjectStatusValue,
+} from '../../common/statuses';
 
 export class UpdateSubjectDto {
   @IsOptional()
@@ -22,6 +25,6 @@ export class UpdateSubjectDto {
   description?: string;
 
   @IsOptional()
-  @IsEnum(SubjectStatus)
-  status?: SubjectStatus;
+  @IsIn(Object.values(SubjectStatus))
+  status?: SubjectStatusValue;
 }

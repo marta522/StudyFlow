@@ -10,10 +10,9 @@ export interface User {
 
 export interface AuthContextValue {
   user: User | null;
-  token: string | null;
   loading: boolean;
   authError: string | null;
-  login: (token: string, user: User) => void;
+  login: (user: User) => void;
   logout: () => void;
 }
 

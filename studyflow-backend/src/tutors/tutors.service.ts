@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { fromCents, toCents } from '../common/money';
+import { DEFAULT_LIST_LIMIT } from '../common/pagination';
 import { CreateAvailabilityDto } from './dto/create-availability.dto';
 import { SearchTutorsDto } from './dto/search-tutors.dto';
 import { UpdateTutorProfileDto } from './dto/update-tutor-profile.dto';
@@ -42,6 +44,10 @@ export class TutorsService {
       );
     }
 
+    const minPriceCents =
+      query.min_price === undefined ? undefined : toCents(query.min_price);
+    const maxPriceCents =
+      query.max_price === undefined ? undefined : toCents(query.max_price);
     const where: Prisma.UserWhereInput = {
       role: { name: 'tutor' },
       status: 'ACTIVE',
@@ -53,9 +59,9 @@ export class TutorsService {
           }),
           ...((query.min_price !== undefined ||
             query.max_price !== undefined) && {
-            price_per_hour: {
-              ...(query.min_price !== undefined && { gte: query.min_price }),
-              ...(query.max_price !== undefined && { lte: query.max_price }),
+            price_per_hour_cents: {
+              ...(minPriceCents !== undefined && { gte: minPriceCents }),
+              ...(maxPriceCents !== undefined && { lte: maxPriceCents }),
             },
           }),
         },
@@ -99,18 +105,18 @@ export class TutorsService {
             }),
             ...((query.min_price !== undefined ||
               query.max_price !== undefined) && {
-              price_per_hour: {
-                ...(query.min_price !== undefined && {
-                  gte: query.min_price,
+              price_per_hour_cents: {
+                ...(minPriceCents !== undefined && {
+                  gte: minPriceCents,
                 }),
-                ...(query.max_price !== undefined && {
-                  lte: query.max_price,
+                ...(maxPriceCents !== undefined && {
+                  lte: maxPriceCents,
                 }),
               },
             }),
           },
           select: {
-            price_per_hour: true,
+            price_per_hour_cents: true,
             experience_years: true,
             description: true,
             subject: { select: { id_subjects: true, name: true } },
@@ -119,6 +125,7 @@ export class TutorsService {
         reviews_received: { select: { rating: true } },
       },
       orderBy: [{ last_name: 'asc' }, { first_name: 'asc' }],
+      take: DEFAULT_LIST_LIMIT,
     });
 
     return tutors
@@ -145,7 +152,7 @@ export class TutorsService {
           subjects: tutor.tutor_subjects.map((offer) => ({
             id_subjects: offer.subject.id_subjects,
             name: offer.subject.name,
-            price_per_hour: Number(offer.price_per_hour),
+            price_per_hour: fromCents(offer.price_per_hour_cents),
             experience_years: offer.experience_years,
             description: offer.description,
           })),
@@ -221,7 +228,7 @@ export class TutorsService {
       subjects: tutor.tutor_subjects.map((offer) => ({
         id_subjects: offer.subject.id_subjects,
         name: offer.subject.name,
-        price_per_hour: Number(offer.price_per_hour),
+        price_per_hour: fromCents(offer.price_per_hour_cents),
       })),
       rating:
         ratingAverage === null ? null : Math.round(ratingAverage * 100) / 100,
@@ -251,7 +258,7 @@ export class TutorsService {
                 tutor_subjects: {
                   select: {
                     subject_id: true,
-                    price_per_hour: true,
+                    price_per_hour_cents: true,
                   },
                 },
                 reviews_received: { select: { rating: true } },
@@ -286,7 +293,7 @@ export class TutorsService {
           prices: new Map(
             tutor.tutor_subjects.map((offer) => [
               offer.subject_id,
-              Number(offer.price_per_hour),
+              fromCents(offer.price_per_hour_cents),
             ]),
           ),
           ratings: tutor.reviews_received.map((review) => review.rating),
@@ -346,6 +353,7 @@ export class TutorsService {
         subject: { select: { id_subjects: true, name: true } },
       },
       orderBy: [{ lesson_date: 'asc' }, { start_time: 'asc' }],
+      take: DEFAULT_LIST_LIMIT,
     });
   }
 
@@ -387,12 +395,12 @@ export class TutorsService {
 
     const tutorSubjects = await this.prisma.tutorSubject.findMany({
       where: { tutor_id: tutorId },
-      select: { subject_id: true, price_per_hour: true },
+      select: { subject_id: true, price_per_hour_cents: true },
     });
     const ratesBySubject = new Map(
       tutorSubjects.map((item) => [
         item.subject_id,
-        Number(item.price_per_hour),
+        fromCents(item.price_per_hour_cents),
       ]),
     );
     const now = new Date();
@@ -436,6 +444,7 @@ export class TutorsService {
     return this.prisma.availability.findMany({
       where: { tutor_id: tutorId, is_active: true },
       orderBy: [{ day_of_week: 'asc' }, { start_time: 'asc' }],
+      take: DEFAULT_LIST_LIMIT,
     });
   }
 

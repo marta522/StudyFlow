@@ -1,4 +1,5 @@
 import { lazy, Suspense, type ReactNode } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { useAuth } from "./context/useAuth";
@@ -35,8 +36,8 @@ const TutorSearch = lazy(() =>
   })),
 );
 
-function ProtectedRoute({ children }: { children: ReactNode }) {
-  const { token, user, loading, authError, logout } = useAuth();
+export function ProtectedRoute({ children }: { children: ReactNode }) {
+  const { user, loading, authError, logout } = useAuth();
 
   if (loading) {
     return (
@@ -68,7 +69,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!token || !user) {
+  if (!user) {
     return <Navigate to="/login" replace />;
   }
 
@@ -76,7 +77,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 }
 
 function AppRoutes() {
-  const { token, user, loading } = useAuth();
+  const { user, loading } = useAuth();
 
   return (
     <Suspense
@@ -94,7 +95,7 @@ function AppRoutes() {
         <Route
           path="/login"
           element={
-            !loading && token && user ? (
+            !loading && user ? (
               <Navigate to="/dashboard" replace />
             ) : (
               <LoginPage />
@@ -104,7 +105,7 @@ function AppRoutes() {
         <Route
           path="/register"
           element={
-            !loading && token && user ? (
+            !loading && user ? (
               <Navigate to="/dashboard" replace />
             ) : (
               <RegisterPage />
@@ -127,12 +128,24 @@ function AppRoutes() {
   );
 }
 
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
 export default function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <AppRoutes />
-      </AuthProvider>
-    </BrowserRouter>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <AuthProvider>
+          <AppRoutes />
+        </AuthProvider>
+      </BrowserRouter>
+    </QueryClientProvider>
   );
 }
