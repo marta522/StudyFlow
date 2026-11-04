@@ -11,46 +11,17 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import api from "../api/axios";
 import { downloadCsv } from "../utils/csv";
 import { formatDateLong } from "../utils/date";
+import {
+  useAdminSchedule,
+  type ScheduleLesson,
+  type ScheduleLessonPayload,
+} from "../hooks/useAdminSchedule";
 import { AdminLessonDetailsDialog } from "./AdminLessonDetailsDialog";
-
-interface Subject {
-  id_subjects: number;
-  name: string;
-}
-
-export interface ScheduleLesson {
-  id_lessons: number;
-  tutor_id: number;
-  subject_id: number;
-  lesson_date: string;
-  start_time: string;
-  end_time: string;
-  status: string;
-  cancelled_at: string | null;
-  cancelled_by_user: { first_name: string; last_name: string } | null;
-  subject: Subject;
-  tutor: { first_name: string; last_name: string };
-  bookings: {
-    status: string;
-    student: { id_users: number; first_name: string; last_name: string };
-  }[];
-}
-
-interface ManagedUser {
-  id_users: number;
-  first_name: string;
-  last_name: string;
-  email: string;
-  role: { name: "student" | "tutor" };
-}
-
-interface ManagedSubject extends Subject {
-  tutor_subjects: { tutor_id: number }[];
-}
+import { AdminScheduleLessonCard } from "./AdminScheduleLessonCard";
+import { useFeedback } from "./useFeedback";
+import { LoadingCards } from "./LoadingCards";
 
 interface LessonForm {
   tutor_id: string;
@@ -101,37 +72,17 @@ function mondayForDate(value: string): Date | null {
 }
 
 export function AdminSchedule() {
-  const queryClient = useQueryClient();
+  const { confirm, notify } = useFeedback();
   const [scheduleParams, setScheduleParams] = useState<Record<string, string>>(
     {},
   );
-  const scheduleQuery = useQuery({
-    queryKey: ["admin-schedule", "lessons", scheduleParams],
-    queryFn: async () => {
-      const { data } = await api.get<ScheduleLesson[]>("/bookings/schedule", {
-        params: scheduleParams,
-      });
-      return data;
-    },
-    staleTime: 30_000,
-  });
-  const optionsQuery = useQuery({
-    queryKey: ["admin-schedule", "options"],
-    queryFn: async () => {
-      const [subjectResponse, managedSubjectResponse, userResponse] =
-        await Promise.all([
-          api.get<Subject[]>("/subjects"),
-          api.get<ManagedSubject[]>("/subjects/admin"),
-          api.get<ManagedUser[]>("/users"),
-        ]);
-      return {
-        subjects: subjectResponse.data,
-        offeredSubjects: managedSubjectResponse.data,
-        users: userResponse.data,
-      };
-    },
-    staleTime: 30_000,
-  });
+  const {
+    scheduleQuery,
+    optionsQuery,
+    fetchLessons,
+    saveLesson,
+    cancelLesson: deleteLesson,
+  } = useAdminSchedule(scheduleParams);
   const subjects = optionsQuery.data?.subjects ?? [];
   const offeredSubjects = optionsQuery.data?.offeredSubjects ?? [];
   const users = optionsQuery.data?.users ?? [];
@@ -164,6 +115,9 @@ export function AdminSchedule() {
   const loading = scheduleQuery.isFetching || optionsQuery.isFetching;
   const queryError = scheduleQuery.error ?? optionsQuery.error;
   const error = searchError ?? (queryError ? getErrorMessage(queryError) : null);
+  useEffect(() => {
+    if (error) notify(error, "error");
+  }, [error, notify]);
   const filteredLessons = lessons.filter(
     (lesson) => !statusFilter || lesson.status === statusFilter,
   );
@@ -238,17 +192,7 @@ export function AdminSchedule() {
     setScheduleParams(nextParams);
     setSearchError(null);
     try {
-      await queryClient.fetchQuery({
-        queryKey: ["admin-schedule", "lessons", nextParams],
-        queryFn: async () => {
-          const { data } = await api.get<ScheduleLesson[]>(
-            "/bookings/schedule",
-            { params: nextParams },
-          );
-          return data;
-        },
-        staleTime: 30_000,
-      });
+      await fetchLessons(nextParams);
     } catch (requestError: unknown) {
       setSearchError(getErrorMessage(requestError));
     }
@@ -279,7 +223,7 @@ export function AdminSchedule() {
     setSavingLesson(true);
     setSearchError(null);
     try {
-      const payload = {
+      const payload: ScheduleLessonPayload = {
         tutor_id: Number(lessonForm.tutor_id),
         subject_id: Number(lessonForm.subject_id),
         lesson_date: lessonForm.lesson_date,
@@ -289,16 +233,9 @@ export function AdminSchedule() {
           student_id: Number(lessonForm.student_id),
         }),
       };
-      if (editingLessonId) {
-        await api.patch(`/bookings/admin/lessons/${editingLessonId}`, payload);
-      } else {
-        await api.post("/bookings/admin/lessons", payload);
-      }
+      await saveLesson(editingLessonId, payload);
       setLessonForm(EMPTY_FORM);
       setEditingLessonId(null);
-      await queryClient.invalidateQueries({
-        queryKey: ["admin-schedule", "lessons"],
-      });
       await searchLessons();
     } catch (requestError: unknown) {
       setSearchError(getErrorMessage(requestError));
@@ -328,16 +265,16 @@ export function AdminSchedule() {
     const message = students
       ? `Odwołać lekcję ${lesson?.subject.name} dla ${students}?\n\nWszyscy uczniowie i korepetytor otrzymają powiadomienie, a powiązane rezerwacje zostaną anulowane.`
       : `Odwołać wolny termin ${lesson?.subject.name}?\n\nKorepetytor otrzyma powiadomienie.`;
-    if (!window.confirm(message)) return;
+    if (!(await confirm(message))) return;
     setSearchError(null);
     try {
-      await api.delete(`/bookings/admin/lessons/${lessonId}`);
-      await queryClient.invalidateQueries({
-        queryKey: ["admin-schedule", "lessons"],
-      });
+      await deleteLesson(lessonId);
       await searchLessons();
+      notify("Lekcja została odwołana.");
     } catch (requestError: unknown) {
-      setSearchError(getErrorMessage(requestError));
+      const message = getErrorMessage(requestError);
+      setSearchError(message);
+      notify(message, "error");
     }
   }
 
@@ -791,9 +728,7 @@ export function AdminSchedule() {
         </p>
       )}
       {loading ? (
-        <p role="status" className="py-6 text-center text-brand-textMuted">
-          Ładowanie harmonogramu…
-        </p>
+        <LoadingCards label="Ładowanie harmonogramu" />
       ) : !error && sortedLessons.length === 0 ? (
         <p className="rounded-2xl border border-brand-cardBorder bg-brand-card p-8 text-center text-brand-textMuted">
           Brak zajęć spełniających wybrane kryteria.
@@ -870,8 +805,21 @@ export function AdminSchedule() {
           )}
         </>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-brand-cardBorder bg-brand-card">
-          <table className="w-full min-w-[760px] text-left text-sm">
+        <>
+        <div className="grid gap-3 md:hidden">
+          {sortedLessons.map((lesson) => (
+            <AdminScheduleLessonCard
+              key={lesson.id_lessons}
+              lesson={lesson}
+              hasConflict={conflictingLessonIds.has(lesson.id_lessons)}
+              onView={() => openLessonDetails(lesson)}
+              onEdit={() => startEditing(lesson)}
+              onCancel={() => void cancelLesson(lesson.id_lessons)}
+            />
+          ))}
+        </div>
+        <div className="hidden overflow-x-auto rounded-2xl border border-brand-cardBorder bg-brand-card md:block">
+          <table className="w-full min-w-190 text-left text-sm">
             <thead className="border-b border-brand-cardBorder bg-brand-black text-xs uppercase text-brand-textMuted">
               <tr>
                 <th className="px-5 py-4">Data i godzina</th>
@@ -894,7 +842,7 @@ export function AdminSchedule() {
                     <button
                       type="button"
                       onClick={() => openLessonDetails(lesson)}
-                      className="text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-yellow"
+                      className="text-left focus-visible:ring-2 focus-visible:ring-brand-yellow"
                     >
                       <p>{formatDateLong(lesson.lesson_date)}</p>
                       <p className="mt-1 text-xs text-brand-textMuted">
@@ -958,6 +906,7 @@ export function AdminSchedule() {
             </tbody>
           </table>
         </div>
+        </>
       )}
       <AdminLessonDetailsDialog
         lesson={selectedLesson}

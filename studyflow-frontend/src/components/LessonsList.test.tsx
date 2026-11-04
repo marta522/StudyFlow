@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LessonsList } from "./LessonsList";
+import { FeedbackProvider } from "./FeedbackProvider";
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -35,7 +36,11 @@ describe("LessonsList", () => {
 
   it("books an available lesson and confirms success", async () => {
     const user = userEvent.setup();
-    render(<LessonsList />);
+    render(
+      <FeedbackProvider>
+        <LessonsList />
+      </FeedbackProvider>,
+    );
 
     await user.click(await screen.findByRole("button", { name: "Zarezerwuj" }));
 
@@ -45,7 +50,7 @@ describe("LessonsList", () => {
       });
     });
     expect(
-      await screen.findByText("Pomyślnie zarezerwowano lekcję!"),
-    ).toBeInTheDocument();
+      await screen.findAllByText("Pomyślnie zarezerwowano lekcję!"),
+    ).not.toHaveLength(0);
   });
 });

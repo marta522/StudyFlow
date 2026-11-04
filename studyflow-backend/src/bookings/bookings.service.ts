@@ -3,7 +3,10 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -14,12 +17,34 @@ import { UpdateLessonDto } from './dto/update-lesson.dto';
 import { CreateAdminLessonDto } from './dto/create-admin-lesson.dto';
 import { UpdateAdminLessonDto } from './dto/update-admin-lesson.dto';
 import { DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT } from '../common/pagination';
+import { completePastLessons } from '../common/lesson-completion';
 
 @Injectable()
-export class BookingsService {
+export class BookingsService implements OnModuleInit, OnModuleDestroy {
   private readonly appTimeZone = process.env.APP_TIMEZONE ?? 'Europe/Warsaw';
+  private readonly logger = new Logger(BookingsService.name);
+  private completionTimer?: NodeJS.Timeout;
 
   constructor(private readonly prisma: PrismaService) {}
+
+  onModuleInit() {
+    const completeExpiredLessons = () => {
+      void completePastLessons(this.prisma).catch((error: unknown) => {
+        this.logger.error(
+          'Automatic lesson completion failed.',
+          error instanceof Error ? error.stack : String(error),
+        );
+      });
+    };
+
+    completeExpiredLessons();
+    this.completionTimer = setInterval(completeExpiredLessons, 60_000);
+    this.completionTimer.unref();
+  }
+
+  onModuleDestroy() {
+    if (this.completionTimer) clearInterval(this.completionTimer);
+  }
 
   private rethrowTransactionError(
     error: unknown,
@@ -27,7 +52,7 @@ export class BookingsService {
   ): never {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === 'P2034'
+      (error.code === 'P2034' || error.code === 'P2002')
     ) {
       throw new ConflictException(conflictMessage);
     }
@@ -866,6 +891,7 @@ export class BookingsService {
   }
 
   async getUserBookings(userId: number, role: string) {
+    await completePastLessons(this.prisma);
     if (role === 'student') {
       return this.prisma.booking.findMany({
         where: { student_id: userId },

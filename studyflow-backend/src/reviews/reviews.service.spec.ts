@@ -7,6 +7,10 @@ describe('ReviewsService', () => {
     booking: { findFirst: jest.fn() },
     user: { findFirst: jest.fn() },
     review: { create: jest.fn() },
+    lesson: {
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
   };
   let service: ReviewsService;
 
@@ -51,6 +55,31 @@ describe('ReviewsService', () => {
           rating: 5,
           comment: 'Bardzo polecam.',
         },
+      }),
+    );
+  });
+
+  it('auto-completes an ended lesson before checking review eligibility', async () => {
+    prisma.booking.findFirst.mockResolvedValue({ lesson_id: 31 });
+    prisma.review.create.mockResolvedValue({
+      id_reviews: 5,
+      rating: 5,
+      comment: null,
+    });
+
+    await service.createReview(9, { tutor_id: 7, rating: 5 });
+
+    expect(prisma.lesson.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: 'SCHEDULED' }),
+        data: { status: 'COMPLETED' },
+      }),
+    );
+    expect(prisma.booking.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          lesson: expect.objectContaining({ status: 'COMPLETED' }),
+        }),
       }),
     );
   });

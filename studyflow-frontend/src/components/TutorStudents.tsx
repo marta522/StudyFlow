@@ -13,13 +13,20 @@ import {
 } from "lucide-react";
 import {
   useCallback,
+  useEffect,
   useMemo,
   useState,
   type FormEvent,
 } from "react";
-import api from "../api/axios";
 import { useAuth } from "../context/useAuth";
 import { useBookings } from "../hooks/useBookings";
+import {
+  useTutorStudentActions,
+  type StudentGradeRecord,
+} from "../hooks/useTutorStudentActions";
+import { useFeedback } from "./useFeedback";
+import { LoadingCards } from "./LoadingCards";
+import { TutorStudentCard } from "./TutorStudentCard";
 
 interface Person {
   id_users: number;
@@ -32,18 +39,6 @@ interface Person {
 interface Subject {
   id_subjects: number;
   name: string;
-}
-
-interface GradeRecord {
-  id_monthly_grades: number;
-  month: number;
-  year: number;
-  grade: number | string;
-  comment: string | null;
-  created_at: string;
-  lesson: { lesson_date: string } | null;
-  subject: Subject;
-  tutor: Pick<Person, "first_name" | "last_name">;
 }
 
 interface AttendanceRecord {
@@ -114,6 +109,8 @@ function formatLessonDate(date: string): string {
 }
 
 export function TutorStudents() {
+  const { notify } = useFeedback();
+  const studentActions = useTutorStudentActions();
   const { user } = useAuth();
   const bookingsQuery = useBookings<Booking>(user?.id);
   const bookings = (bookingsQuery.data ?? []).filter(
@@ -126,7 +123,7 @@ export function TutorStudents() {
   const [studentSearch, setStudentSearch] = useState("");
   const [gradeStudent, setGradeStudent] = useState<Person | null>(null);
   const [gradesStudent, setGradesStudent] = useState<Person | null>(null);
-  const [studentGrades, setStudentGrades] = useState<GradeRecord[]>([]);
+  const [studentGrades, setStudentGrades] = useState<StudentGradeRecord[]>([]);
   const [loadingGrades, setLoadingGrades] = useState(false);
   const [gradeHistoryError, setGradeHistoryError] = useState<string | null>(
     null,
@@ -150,6 +147,14 @@ export function TutorStudents() {
   const displayError =
     error ??
     (bookingsError ? getErrorMessage(bookingsError) : null);
+
+  useEffect(() => {
+    if (notice) notify(notice);
+  }, [notice, notify]);
+
+  useEffect(() => {
+    if (displayError) notify(displayError, "error");
+  }, [displayError, notify]);
 
   const students = useMemo(() => {
     const byId = new Map<number, Person>();
@@ -256,11 +261,11 @@ export function TutorStudents() {
     setError(null);
     setNotice(null);
     try {
-      await api.post("/grades", {
-        lesson_id: Number(gradeLessonId),
-        grade: Number(grade),
-        comment: comment.trim() || undefined,
-      });
+      await studentActions.addGrade(
+        Number(gradeLessonId),
+        Number(grade),
+        comment.trim() || undefined,
+      );
       setNotice(
         `Dodano ocenę dla ${gradeStudent.first_name} ${gradeStudent.last_name}.`,
       );
@@ -282,10 +287,9 @@ export function TutorStudents() {
     setGradeHistoryError(null);
     setLoadingGrades(true);
     try {
-      const { data } = await api.get<GradeRecord[]>(
-        `/grades/student/${student.id_users}`,
+      setStudentGrades(
+        await studentActions.loadStudentGrades(student.id_users),
       );
-      setStudentGrades(data);
     } catch (requestError: unknown) {
       setGradeHistoryError(getErrorMessage(requestError));
     } finally {
@@ -300,10 +304,10 @@ export function TutorStudents() {
     setError(null);
     setNotice(null);
     try {
-      await api.post("/attendance", {
-        booking_id: Number(attendanceBookingId),
+      await studentActions.markAttendance(
+        Number(attendanceBookingId),
         present,
-      });
+      );
       setNotice(`Zapisano obecność ucznia ${attendanceStudent.first_name}.`);
       setAttendanceStudent(null);
       await loadBookings();
@@ -411,9 +415,7 @@ export function TutorStudents() {
         </section>
       )}
       {loading ? (
-        <p role="status" className="py-8 text-center text-brand-textMuted">
-          Ładowanie uczniów…
-        </p>
+        <LoadingCards label="Ładowanie uczniów" />
       ) : students.length === 0 ? (
         <p className="rounded-2xl border border-brand-cardBorder bg-brand-card p-6 text-center text-brand-textMuted">
           Nie masz jeszcze uczniów z aktywną rezerwacją.
@@ -439,7 +441,65 @@ export function TutorStudents() {
               Nie znaleziono ucznia pasującego do wyszukiwania.
             </p>
           ) : (
-            <div className="overflow-x-auto rounded-2xl border border-brand-cardBorder bg-brand-card">
+            <>
+            <div className="grid gap-3 md:hidden">
+              {filteredStudents.map((student) => {
+                const studentBookings = bookings.filter(
+                  (booking) => booking.student.id_users === student.id_users,
+                );
+                const hasGradeableLesson = studentBookings.some(
+                  (booking) =>
+                    bookingHasEnded(booking) &&
+                    !booking.lesson.monthly_grades.some(
+                      (gradeRecord) => gradeRecord.student_id === booking.student.id_users,
+                    ),
+                );
+                const hasUnmarkedAttendance = studentBookings.some(
+                  (booking) => bookingHasEnded(booking) && booking.attendance === null,
+                );
+                return (
+                  <TutorStudentCard
+                    key={student.id_users}
+                    name={`${student.first_name} ${student.last_name}`}
+                    email={student.email}
+                    phone={student.phone}
+                  >
+                      <button
+                        type="button"
+                        onClick={() => void handleViewGrades(student)}
+                        className="rounded-lg border border-brand-cardBorder px-3 py-2 text-xs font-semibold text-white"
+                      >
+                        Historia
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGradeLessonId("");
+                          setGradeStudent(student);
+                        }}
+                        disabled={!hasGradeableLesson}
+                        className="rounded-lg bg-brand-yellow px-3 py-2 text-xs font-semibold text-brand-black disabled:opacity-40"
+                        title={!hasGradeableLesson ? "Brak zakończonych lekcji bez wystawionej oceny." : undefined}
+                      >
+                        Dodaj ocenę
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAttendanceBookingId("");
+                          setAttendanceStudent(student);
+                        }}
+                        disabled={!hasUnmarkedAttendance}
+                        className="rounded-lg border border-brand-cardBorder px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
+                        title={!hasUnmarkedAttendance ? "Brak zakończonych lekcji bez oznaczonej obecności." : undefined}
+                      >
+                        Obecność
+                      </button>
+                  </TutorStudentCard>
+                );
+              })}
+            </div>
+            <div className="hidden overflow-x-auto rounded-2xl border border-brand-cardBorder bg-brand-card md:block">
               <table className="w-full text-left text-sm text-white">
             <thead className="border-b border-brand-cardBorder bg-brand-black text-xs uppercase text-brand-textMuted">
               <tr>
@@ -536,6 +596,7 @@ export function TutorStudents() {
             </tbody>
               </table>
             </div>
+            </>
           )}
         </div>
       )}

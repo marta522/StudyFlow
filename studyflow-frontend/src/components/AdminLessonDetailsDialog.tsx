@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import type { ScheduleLesson } from "./AdminSchedule";
+import type { ScheduleLesson } from "../hooks/useAdminSchedule";
 import { formatDateLong } from "../utils/date";
 
 interface AdminLessonDetailsDialogProps {
@@ -17,7 +17,7 @@ export function AdminLessonDetailsDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[60] grid place-items-center bg-black/70 p-4"
+      className="fixed inset-0 z-60 grid place-items-center bg-black/70 p-4"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();

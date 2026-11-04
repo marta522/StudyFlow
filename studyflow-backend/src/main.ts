@@ -74,20 +74,6 @@ async function bootstrap() {
       message: { statusCode: 429, message: 'Zbyt wiele prób logowania.' },
     }),
   );
-  app.use(
-    '/api/auth/request-password-reset',
-    rateLimit({
-      windowMs: 15 * 60 * 1000,
-      limit: 3,
-      skip: (request) => request.method !== 'POST',
-      standardHeaders: 'draft-8',
-      legacyHeaders: false,
-      message: {
-        statusCode: 429,
-        message: 'Zbyt wiele próśb o reset hasła.',
-      },
-    }),
-  );
   app.setGlobalPrefix('api');
   app.enableShutdownHooks();
   app.useGlobalPipes(
@@ -98,20 +84,25 @@ async function bootstrap() {
     }),
   );
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('StudyFlow API')
-    .setDescription(
-      'Dokumentacja API platformy StudyFlow. Przed żądaniami zmieniającymi dane pobierz token przez GET /api/auth/csrf i dołącz go jako X-CSRF-Token.',
-    )
-    .setVersion('1.0')
-    .addCookieAuth('studyflow_session', {
-      type: 'apiKey',
-      in: 'cookie',
-      name: 'studyflow_session',
-    })
-    .build();
-  const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('api/docs', app, swaggerDocument);
+  if (
+    process.env.NODE_ENV !== 'production' ||
+    process.env.ENABLE_SWAGGER === 'true'
+  ) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('StudyFlow API')
+      .setDescription(
+        'Dokumentacja API platformy StudyFlow. Przed żądaniami zmieniającymi dane pobierz token przez GET /api/auth/csrf i dołącz go jako X-CSRF-Token.',
+      )
+      .setVersion('1.0')
+      .addCookieAuth('studyflow_session', {
+        type: 'apiKey',
+        in: 'cookie',
+        name: 'studyflow_session',
+      })
+      .build();
+    const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api/docs', app, swaggerDocument);
+  }
 
   await app.listen(process.env.PORT ?? 3000);
   logger.log(

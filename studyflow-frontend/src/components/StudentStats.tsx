@@ -2,6 +2,7 @@ import axios from "axios";
 import { Award, BookOpen, Clock3, RefreshCw, TrendingUp } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import api from "../api/axios";
+import { useFeedback } from "./useFeedback";
 
 interface Grade {
   id_monthly_grades: number;
@@ -48,10 +49,15 @@ function durationInHours(start: string, end: string): number {
 }
 
 export function StudentStats() {
+  const { notify } = useFeedback();
   const [grades, setGrades] = useState<Grade[]>([]);
   const [completedBookings, setCompletedBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (error) notify(error, "error");
+  }, [error, notify]);
 
   const loadStats = useCallback(async () => {
     setLoading(true);
@@ -131,6 +137,39 @@ export function StudentStats() {
     );
     return summary;
   }, {});
+  const gradesByMonth = Object.values(
+    grades.reduce<
+      Record<
+        string,
+        { month: number; year: number; total: number; count: number }
+      >
+    >((summary, grade) => {
+      const key = `${grade.year}-${String(grade.month).padStart(2, "0")}`;
+      const point = (summary[key] ??= {
+        month: grade.month,
+        year: grade.year,
+        total: 0,
+        count: 0,
+      });
+      point.total += Number(grade.grade);
+      point.count += 1;
+      return summary;
+    }, {}),
+  )
+    .map((point) => ({ ...point, average: point.total / point.count }))
+    .sort((left, right) => left.year - right.year || left.month - right.month)
+    .slice(-12);
+  const chartPoints = gradesByMonth.map((point, index) => ({
+    ...point,
+    x:
+      gradesByMonth.length === 1
+        ? 200
+        : 35 + (index * 330) / (gradesByMonth.length - 1),
+    y: 145 - (point.average / 6) * 125,
+  }));
+  const chartPath = chartPoints
+    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
+    .join(" ");
 
   const stats = [
     {
@@ -242,6 +281,99 @@ export function StudentStats() {
                 </article>
               ))}
           </div>
+        )}
+      </section>
+
+      <section className="space-y-4" aria-labelledby="grade-progress-title">
+        <h3 id="grade-progress-title" className="text-xl font-bold">
+          Postępy w nauce
+        </h3>
+        {loading ? (
+          <div
+            role="status"
+            aria-label="Ładowanie wykresu postępów"
+            className="h-56 animate-pulse rounded-2xl border border-brand-cardBorder bg-brand-card"
+          />
+        ) : gradesByMonth.length === 0 ? (
+          <p className="rounded-2xl border border-brand-cardBorder bg-brand-card p-6 text-brand-textMuted">
+            Wykres pojawi się po otrzymaniu pierwszej oceny miesięcznej.
+          </p>
+        ) : (
+          <figure
+            role="img"
+            aria-label={`Średnia ocen w kolejnych miesiącach: ${chartPoints
+              .map(
+                (point) =>
+                  `${point.month}/${point.year}: ${point.average.toFixed(2)}`,
+              )
+              .join("; ")}`}
+            className="rounded-2xl border border-brand-cardBorder bg-brand-card p-4 sm:p-6"
+          >
+            <svg
+              viewBox="0 0 400 190"
+              className="h-auto w-full"
+              aria-hidden="true"
+            >
+              {[1, 3, 5].map((gradeValue) => {
+                const y = 145 - (gradeValue / 6) * 125;
+                return (
+                  <g key={gradeValue}>
+                    <line
+                      x1="30"
+                      x2="375"
+                      y1={y}
+                      y2={y}
+                      stroke="currentColor"
+                      strokeOpacity=".15"
+                    />
+                    <text
+                      x="7"
+                      y={y + 4}
+                      fill="currentColor"
+                      fontSize="11"
+                      className="text-brand-textMuted"
+                    >
+                      {gradeValue}
+                    </text>
+                  </g>
+                );
+              })}
+              {chartPoints.length > 1 && (
+                <path
+                  d={chartPath}
+                  fill="none"
+                  stroke="#facc15"
+                  strokeWidth="3"
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                />
+              )}
+              {chartPoints.map((point) => (
+                <g key={`${point.year}-${point.month}`}>
+                  <circle
+                    cx={point.x}
+                    cy={point.y}
+                    r="5"
+                    fill="#facc15"
+                    stroke="#111"
+                    strokeWidth="2"
+                  />
+                  <text
+                    x={point.x}
+                    y="174"
+                    textAnchor="middle"
+                    fill="currentColor"
+                    fontSize="10"
+                  >
+                    {`${point.month}/${String(point.year).slice(-2)}`}
+                  </text>
+                </g>
+              ))}
+            </svg>
+            <figcaption className="mt-2 text-center text-xs text-brand-textMuted">
+              Średnia ocen miesięcznych w skali 1–6
+            </figcaption>
+          </figure>
         )}
       </section>
 

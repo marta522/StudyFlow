@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { useAuth } from "./context/useAuth";
 import { LandingPage } from "./pages/LandingPage";
+import { FeedbackProvider } from "./components/FeedbackProvider";
 
 const DashboardPage = lazy(() =>
   import("./pages/DashboardPage").then((module) => ({
@@ -18,16 +19,6 @@ const LoginPage = lazy(() =>
 const RegisterPage = lazy(() =>
   import("./pages/RegisterPage").then((module) => ({
     default: module.RegisterPage,
-  })),
-);
-const PasswordRecoveryPage = lazy(() =>
-  import("./pages/PasswordRecoveryPage").then((module) => ({
-    default: module.PasswordRecoveryPage,
-  })),
-);
-const ResetPasswordPage = lazy(() =>
-  import("./pages/ResetPasswordPage").then((module) => ({
-    default: module.ResetPasswordPage,
   })),
 );
 const TutorSearch = lazy(() =>
@@ -112,8 +103,6 @@ function AppRoutes() {
             )
           }
         />
-        <Route path="/forgot-password" element={<PasswordRecoveryPage />} />
-        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route
           path="/dashboard"
           element={
@@ -143,7 +132,9 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <AuthProvider>
-          <AppRoutes />
+          <FeedbackProvider>
+            <AppRoutes />
+          </FeedbackProvider>
         </AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>

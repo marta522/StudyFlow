@@ -17,50 +17,18 @@ import {
 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { Fragment } from "react";
-import api from "../api/axios";
 import { useUsers, type UserItem, type UserRole, type UserStatus } from "../hooks/useUsers";
+import {
+  useManagedUserOperations,
+  type UserActivity,
+} from "../hooks/useManagedUserOperations";
 import { downloadCsv } from "../utils/csv";
 import { formatDateOnly } from "../utils/date";
+import { useFeedback } from "./useFeedback";
+import { LoadingCards } from "./LoadingCards";
+import { UserManagementMobileCard } from "./UserManagementMobileCard";
 
 type RoleFilter = "all" | UserRole;
-
-interface UserActivity {
-  user: {
-    created_at: string;
-    bookings_as_student: {
-      lesson: {
-        id_lessons: number;
-        lesson_date: string;
-        start_time: string;
-        end_time: string;
-        status: string;
-        subject: { name: string };
-        tutor: { first_name: string; last_name: string };
-      };
-    }[];
-    lessons_as_tutor: {
-      id_lessons: number;
-      lesson_date: string;
-      start_time: string;
-      end_time: string;
-      status: string;
-      subject: { name: string };
-    }[];
-  };
-  bookingCount: number;
-  tutoringLessonCount: number;
-  reviewCount: number;
-  gradeCount: number;
-  auditEvents: {
-    id_admin_audit_logs: number;
-    action: string;
-    entity_type: string;
-    entity_id: number | null;
-    details: string;
-    created_at: string;
-    actor: { first_name: string; last_name: string } | null;
-  }[];
-}
 
 interface ApiError {
   message?: string | string[];
@@ -116,6 +84,8 @@ function formatActivityAction(action: string): string {
 }
 
 export function UserManagement() {
+  const { confirm, notify } = useFeedback();
+  const userOperations = useManagedUserOperations();
   const usersQuery = useUsers();
   const { users, setUsers, fetchUsers } = usersQuery;
   const [refreshing, setRefreshing] = useState(false);
@@ -158,14 +128,29 @@ export function UserManagement() {
       : null);
 
   useEffect(() => {
+    if (notice) notify(notice);
+  }, [notice, notify]);
+
+  useEffect(() => {
+    if (displayError) notify(displayError, "error");
+  }, [displayError, notify]);
+
+  useEffect(() => {
     if (expandedActivityId === null) return;
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setExpandedActivityId(null);
         setActivity(null);
+        const isMobile =
+          window.matchMedia?.("(max-width: 767px)").matches ??
+          window.innerWidth < 768;
         document
-          .getElementById(`user-activity-toggle-${expandedActivityId}`)
+          .getElementById(
+            isMobile
+              ? `mobile-user-activity-toggle-${expandedActivityId}`
+              : `user-activity-toggle-${expandedActivityId}`,
+          )
           ?.focus();
       }
     }
@@ -209,11 +194,11 @@ export function UserManagement() {
     if (
       currentUser &&
       currentUser.role.name !== editForm.role &&
-      !window.confirm(
+      !(await confirm(
         `Zmienić rolę ${currentUser.first_name} ${currentUser.last_name} na ${
           editForm.role === "tutor" ? "korepetytora" : "ucznia"
         }? Zmiana jest możliwa tylko wtedy, gdy konto nie ma historii zajęć.`,
-      )
+      ))
     ) {
       return;
     }
@@ -222,7 +207,7 @@ export function UserManagement() {
     setError(null);
     setNotice(null);
     try {
-      const { data } = await api.patch<UserItem>(`/users/${editingUserId}`, {
+      const data = await userOperations.updateUser(editingUserId, {
         ...editForm,
         phone: editForm.phone.trim() || null,
       });
@@ -249,7 +234,7 @@ export function UserManagement() {
     setError(null);
     setNotice(null);
     try {
-      const { data } = await api.post<UserItem>("/users", {
+      const data = await userOperations.createUser({
         ...createForm,
         phone: createForm.phone.trim() || undefined,
       });
@@ -275,9 +260,9 @@ export function UserManagement() {
 
   async function deleteTutor(user: UserItem) {
     if (
-      !window.confirm(
+      !(await confirm(
         `Usunąć konto korepetytora ${user.first_name} ${user.last_name}?\n\nJeśli konto ma historię lekcji, opinii lub zgłoszeń, zostanie zablokowane, a historia zachowana. Konto bez historii zostanie trwale usunięte.`,
-      )
+      ))
     ) {
       return;
     }
@@ -285,9 +270,7 @@ export function UserManagement() {
     setError(null);
     setNotice(null);
     try {
-      const { data } = await api.delete<UserItem & { archived?: boolean }>(
-        `/users/${user.id_users}`,
-      );
+      const data = await userOperations.deleteTutor(user.id_users);
       if (data.archived) {
         setUsers((previous) =>
           previous.map((item) =>
@@ -321,9 +304,9 @@ export function UserManagement() {
     const status: UserStatus = user.status === "ACTIVE" ? "BLOCKED" : "ACTIVE";
     if (
       status === "BLOCKED" &&
-      !window.confirm(
+      !(await confirm(
         `Zablokować konto ${user.first_name} ${user.last_name}? Użytkownik utraci dostęp do konta.`,
-      )
+      ))
     ) {
       return;
     }
@@ -331,9 +314,9 @@ export function UserManagement() {
     setError(null);
     setNotice(null);
     try {
-      const { data } = await api.patch<UserItem>(
-        `/users/${user.id_users}/status`,
-        { status },
+      const data = await userOperations.updateUserStatus(
+        user.id_users,
+        status,
       );
       setUsers((previous) =>
         previous.map((item) => (item.id_users === data.id_users ? data : item)),
@@ -365,8 +348,7 @@ export function UserManagement() {
     setActivity(null);
     setActivityLoading(true);
     try {
-      const { data } = await api.get<UserActivity>(`/users/${userId}/activity`);
-      setActivity(data);
+      setActivity(await userOperations.loadUserActivity(userId));
     } catch (requestError: unknown) {
       setError(
         getErrorMessage(
@@ -621,16 +603,55 @@ export function UserManagement() {
       )}
 
       {loading ? (
-        <p role="status" className="py-8 text-brand-textMuted">
-          Ładowanie użytkowników…
-        </p>
+        <LoadingCards label="Ładowanie użytkowników" />
       ) : !displayError && filteredUsers.length === 0 ? (
         <p className="rounded-2xl border border-brand-cardBorder bg-brand-card p-8 text-center text-brand-textMuted">
           Brak użytkowników dla wybranego filtra.
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-brand-cardBorder bg-brand-card">
-          <table className="w-full min-w-[850px] text-left text-sm text-white">
+        <>
+        <div className="space-y-3 md:hidden">
+          {filteredUsers.map((user) => {
+            const userActivity =
+              activity?.user.created_at
+                ? {
+                    createdAt: activity.user.created_at,
+                    bookingCount: activity.bookingCount,
+                    tutoringLessonCount: activity.tutoringLessonCount,
+                    reviewCount: activity.reviewCount,
+                    gradeCount: activity.gradeCount,
+                  }
+                : null;
+            return (
+              <UserManagementMobileCard
+                key={user.id_users}
+                user={user}
+                isEditing={editingUserId === user.id_users}
+                isExpanded={expandedActivityId === user.id_users}
+                editForm={editForm}
+                saving={saving}
+                updatingStatus={updatingStatusId !== null}
+                deleting={deletingUserId === user.id_users}
+                activityLoading={activityLoading}
+                activitySummary={userActivity}
+                onSubmit={saveUser}
+                onCancelEdit={() => setEditingUserId(null)}
+                onEditChange={(field, value) =>
+                  setEditForm((current) => ({
+                    ...current,
+                    [field]: field === "role" ? (value as UserRole) : value,
+                  }))
+                }
+                onToggleActivity={() => void toggleActivity(user.id_users)}
+                onBeginEdit={() => beginEdit(user)}
+                onToggleStatus={() => void toggleUserStatus(user)}
+                onDeleteTutor={() => void deleteTutor(user)}
+              />
+            );
+          })}
+        </div>
+        <div className="hidden overflow-x-auto rounded-2xl border border-brand-cardBorder bg-brand-card md:block">
+          <table className="w-full min-w-212.5 text-left text-sm text-white">
             <thead className="border-b border-brand-cardBorder bg-brand-black text-xs uppercase text-brand-textMuted">
               <tr>
                 <th className="px-5 py-4">Imię i nazwisko</th>
@@ -1053,6 +1074,7 @@ export function UserManagement() {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </section>
   );

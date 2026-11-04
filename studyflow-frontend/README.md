@@ -54,7 +54,7 @@ cd StudyFlow
    ```
 
    Zmień `JWT_SECRET` na unikalną wartość i ustaw `CORS_ORIGINS` na adresy
-   frontendu. SMTP jest potrzebne tylko do wysyłania linków resetujących hasło.
+   frontendu.
    Plik bazy danych zostanie utworzony w `studyflow-backend/prisma/dev.db`.
 
 4. Zastosuj migracje:
@@ -71,7 +71,7 @@ cd StudyFlow
    Remove-Item Env:SEED_DEMO_RESET
    ```
 
-   macOS/Linux:
+   Git Bash/macOS/Linux:
 
    ```bash
    SEED_DEMO_RESET=true npx prisma db seed
@@ -85,9 +85,8 @@ cd StudyFlow
 
    API backendu będzie dostępne pod adresem `http://localhost:3000/api`.
 
-   Odzyskiwanie hasła wymaga poprawnej konfiguracji SMTP. Link resetujący jest
-   jednorazowy i wygasa po 30 minutach. Instrukcję tworzenia i odtwarzania kopii
-   bazy znajdziesz w `studyflow-backend/README.md`.
+   Instrukcję tworzenia i odtwarzania kopii bazy znajdziesz w
+   `studyflow-backend/README.md`.
 
 ### 3. Skonfiguruj i uruchom frontend
 
@@ -127,9 +126,9 @@ demo opisanego w `studyflow-backend/README.md`.
 
 | Rola             | Email                  | Hasło      |
 | ---------------- | ---------------------- | ---------- |
-| 👑 Administrator | `admin@studyflow.pl`   | `haslo123` |
-| 🎓 Korepetytor   | `tutor@studyflow.pl`   | `haslo123` |
-| 📚 Uczeń         | `student@studyflow.pl` | `haslo123` |
+| 👑 Administrator | `admin@studyflow.pl`   | `Haslo123` |
+| 🎓 Korepetytor   | `tutor@studyflow.pl`   | `Haslo123` |
+| 📚 Uczeń         | `student@studyflow.pl` | `Haslo123` |
 
 Seed tworzy także konto `dariusz@studyflow.pl`, ucznia `anna@studyflow.pl`
 oraz przykładowe dane lekcji. Rozszerzony zestaw danych dodaje konta
@@ -157,16 +156,14 @@ nagłówku przy żądaniach zmieniających dane. Wdrożenie powinno używać HTT
 frontend i API powinny być w tej samej witrynie (same-site), z dokładnymi
 adresami frontendu w `CORS_ORIGINS`.
 
-Jeśli SMTP-hasło lub `JWT_SECRET` mogły znaleźć się w udostępnionym archiwum,
-traktuj je jako ujawnione:
+Jeśli `JWT_SECRET` mógł znaleźć się w udostępnionym archiwum, traktuj go jako
+ujawniony:
 
-1. Zmień/odwołaj hasło aplikacji u dostawcy SMTP, zaktualizuj `SMTP_PASSWORD` w
-   sekretach środowiska i uruchom ponownie wszystkie instancje backendu.
-2. Wygeneruj nowy sekret poleceniem
+1. Wygeneruj nowy sekret poleceniem
    `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`,
    ustaw go jako `JWT_SECRET` w każdym środowisku i uruchom ponownie backend.
    Stare sesje przestaną działać, użytkownicy będą musieli zalogować się ponownie.
-3. Nie umieszczaj sekretów w ZIP-ie. Przed wysłaniem sprawdź jego zawartość;
+2. Nie umieszczaj sekretów w ZIP-ie. Przed wysłaniem sprawdź jego zawartość;
    wyklucz `.env`, `dist/`, `.git/`, `prisma/*.db` i pliki pomocnicze. Dla
    archiwum zatwierdzonej wersji repozytorium użyj:
 

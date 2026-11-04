@@ -1,4 +1,5 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Navbar } from "../components/Navbar";
 import type { TutorAction } from "../components/MyTutors";
 import { useAuth } from "../context/useAuth";
@@ -109,7 +110,7 @@ function isAllowedDashboardTab(
 
 export function DashboardPage() {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<DashboardTab>("my-bookings");
+  const [searchParams, setSearchParams] = useSearchParams();
   const [welcomeVisible, setWelcomeVisible] = useState(true);
   const [selectedTutor, setSelectedTutor] = useState<{
     id: number;
@@ -140,12 +141,28 @@ export function DashboardPage() {
             ]
           : [];
 
+  const requestedTab = searchParams.get("tab");
+  const activeTab = requestedTab && isAllowedDashboardTab(requestedTab, allowedTabs)
+    ? requestedTab
+    : "my-bookings";
+
+  useEffect(() => {
+    if (requestedTab === activeTab) return;
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("tab", activeTab);
+    setSearchParams(nextParams, { replace: true });
+  }, [activeTab, requestedTab, searchParams, setSearchParams]);
+
   function handleTabChange(tab: string) {
     if (!isAllowedDashboardTab(tab, allowedTabs)) return;
     if (tab !== "my-bookings") {
       setWelcomeVisible(false);
     }
-    setActiveTab(tab);
+    if (requestedTab !== tab) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.set("tab", tab);
+      setSearchParams(nextParams);
+    }
     setSelectedTutor(null);
   }
 

@@ -17,10 +17,11 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import api from "../api/axios";
 import { useAuth } from "../context/useAuth";
 import { useBookings, type Booking } from "../hooks/useBookings";
+import { useLessonIssues } from "../hooks/useLessonIssues";
 import { Link } from "react-router-dom";
+import { useFeedback } from "./useFeedback";
 
 interface ApiError {
   message?: string | string[];
@@ -81,7 +82,9 @@ export function MyBookings({
 }: {
   onOpenTutorStudents?: () => void;
 }) {
+  const { notify } = useFeedback();
   const { user } = useAuth();
+  const submitLessonIssueRequest = useLessonIssues();
   const bookingsQuery = useBookings<Booking>(user?.id);
   const bookings = bookingsQuery.data ?? [];
   const [selectedPeriod, setSelectedPeriod] = useState<"upcoming" | "past">(
@@ -113,6 +116,18 @@ export function MyBookings({
     ? getErrorMessage(bookingsQuery.error)
     : null;
   const isDialogOpen = selectedBooking !== null;
+
+  useEffect(() => {
+    if (issueSent) notify("Zgłoszenie dotyczące lekcji zostało wysłane.");
+  }, [issueSent, notify]);
+
+  useEffect(() => {
+    if (issueError) notify(issueError, "error");
+  }, [issueError, notify]);
+
+  useEffect(() => {
+    if (error) notify(error, "error");
+  }, [error, notify]);
 
   async function refreshBookings() {
     await bookingsQuery.refetch();
@@ -206,11 +221,11 @@ export function MyBookings({
     setSendingIssue(true);
     setIssueError(null);
     try {
-      await api.post("/lesson-issues", {
-        lesson_id: selectedBooking.lesson.id_lessons,
-        title: issueTitle,
-        description: issueDescription,
-      });
+      await submitLessonIssueRequest(
+        selectedBooking.lesson.id_lessons,
+        issueTitle,
+        issueDescription,
+      );
       setIssueSent(true);
       setIssueFormOpen(false);
     } catch (requestError: unknown) {
@@ -260,7 +275,7 @@ export function MyBookings({
               role="button"
               tabIndex={0}
               aria-label={`Szczegóły lekcji ${booking.lesson.subject.name}, ${formatDate(booking.lesson.lesson_date)}`}
-              className="space-y-3 rounded-xl border border-brand-cardBorder bg-brand-card p-5 text-left transition hover:border-brand-yellow focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-yellow"
+              className="space-y-3 rounded-xl border border-brand-cardBorder bg-brand-card p-5 text-left transition hover:border-brand-yellow focus-visible:ring-2 focus-visible:ring-brand-yellow"
             >
               <div className="flex items-center justify-between gap-3">
                 <h3 className="flex items-center gap-2 text-lg font-bold text-white">
@@ -700,7 +715,7 @@ export function MyBookings({
       )}
       {selectedBooking && (
         <div
-          className="fixed inset-0 z-[60] grid place-items-center bg-black/70 p-4"
+          className="fixed inset-0 z-60 grid place-items-center bg-black/70 p-4"
           role="presentation"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) closeBookingDetails();

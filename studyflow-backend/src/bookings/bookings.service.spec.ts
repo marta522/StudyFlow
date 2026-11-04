@@ -195,6 +195,19 @@ describe('BookingsService schedule changes', () => {
     expect(tx.booking.create).not.toHaveBeenCalled();
   });
 
+  it('maps a database-level active booking uniqueness violation to HTTP 409', async () => {
+    prisma.$transaction.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'test',
+      }),
+    );
+
+    await expect(
+      service.bookLesson(9, { lesson_id: 13 }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
   it('rejects booking a lesson whose start time has already passed today', async () => {
     const now = new Date();
     const lessonDate = new Date(

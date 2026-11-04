@@ -9,6 +9,7 @@ import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { fromCents, lessonCostInCents } from '../common/money';
+import { DEFAULT_TUTOR_SALARY_PERCENT } from '../common/financial-constants';
 import { DEFAULT_LIST_LIMIT } from '../common/pagination';
 import { CreateManagedUserDto } from './dto/create-managed-user.dto';
 import { GenerateFinancialReportDto } from './dto/generate-financial-report.dto';
@@ -565,6 +566,9 @@ export class UsersService {
     adminId: number,
     { month, year }: GenerateFinancialReportDto,
   ) {
+    const tutorSalaryPercent = Number(
+      process.env.TUTOR_SALARY_PERCENT ?? DEFAULT_TUTOR_SALARY_PERCENT,
+    );
     const monthStart = new Date(Date.UTC(year, month - 1, 1));
     const nextMonthStart = new Date(Date.UTC(year, month, 1));
     const lessons = await this.prisma.lesson.findMany({
@@ -632,7 +636,9 @@ export class UsersService {
         hourlyRateCents,
         durationMinutes,
       );
-      const tutorSalaryCents = Math.round(studentCostCents * 0.8);
+      const tutorSalaryCents = Math.round(
+        (studentCostCents * tutorSalaryPercent) / 100,
+      );
       totalStudentCostCents += studentCostCents * lesson.bookings.length;
       totalTutorSalaryCents += tutorSalaryCents * lesson.bookings.length;
       const hourlyRate = fromCents(hourlyRateCents);

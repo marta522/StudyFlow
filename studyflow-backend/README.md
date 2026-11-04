@@ -19,6 +19,9 @@ Use Node.js 24.15 or newer.
    npx prisma migrate deploy
    ```
 
+   The latest migration removes the unused password-recovery token table; user
+   accounts and their passwords are not changed.
+
 4. Optionally seed demo data. Seeding deletes all existing local database
    records, so only do this on a new database or when intentionally resetting it.
    In PowerShell:
@@ -29,7 +32,7 @@ Use Node.js 24.15 or newer.
    Remove-Item Env:SEED_DEMO_RESET
    ```
 
-   On macOS/Linux:
+   In Git Bash or macOS/Linux:
 
    ```bash
    SEED_DEMO_RESET=true npx prisma db seed
@@ -40,8 +43,8 @@ Use Node.js 24.15 or newer.
 
 All `POST /api/auth/*` routes are limited to 100 requests per IP per 15 minutes.
 Registration is additionally limited to 5 requests per IP per hour, login to 10
-failed requests per IP per 15 minutes, and password-reset requests to 3 per IP
-per 15 minutes. Successful logins do not count toward the login limit.
+failed requests per IP per 15 minutes. Successful logins do not count toward
+the login limit.
 Configure `TRUST_PROXY` to the number of trusted proxy hops or the trusted proxy
 address range; it defaults to `loopback`. Limits use in-memory storage and are
 intended for a single API instance. Lesson dates and start times use
@@ -80,8 +83,6 @@ transferred to SQLite.
 | `GET` | `/api/auth/csrf` | Public | Returns a CSRF token required in `X-CSRF-Token` for state-changing requests. |
 | `POST` | `/api/auth/register` | Public | Creates a student or tutor account. |
 | `POST` | `/api/auth/login` | Public | Authenticates and sets the session cookie. |
-| `POST` | `/api/auth/request-password-reset` | Public | Sends a time-limited password reset link when the email belongs to an active account. |
-| `POST` | `/api/auth/reset-password` | Public | Changes the password using a valid, single-use reset token. |
 | `POST` | `/api/auth/logout` | Authenticated | Invalidates all of the user's active tokens. |
 | `POST` | `/api/auth/change-password` | Authenticated | Changes the password and invalidates existing tokens. |
 | `GET` | `/api/health` | Public | Returns the API liveness status. |
@@ -109,21 +110,6 @@ transferred to SQLite.
 Deleting a tutor with lesson, review, grade, request, or reported-issue history
 archives the account by blocking it and revoking existing sessions. The
 historical records remain intact. Tutors without linked history can be deleted.
-
-Password recovery requires SMTP configuration. Add these values to `.env`:
-
-```env
-SMTP_HOST="smtp.example.com"
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER="studyflow@example.com"
-SMTP_PASSWORD="your-smtp-password"
-SMTP_FROM="StudyFlow <studyflow@example.com>"
-FRONTEND_URL="http://localhost:5173"
-```
-
-Password reset links expire after 30 minutes and can be used once. Keep SMTP
-credentials out of source control.
 
 New passwords must be at least 8 characters and contain a lowercase letter, an
 uppercase letter, and a digit.
@@ -197,16 +183,14 @@ Coverage thresholds are enforced by `test:cov`.
 
 ## Rotate exposed credentials
 
-If an archive containing `.env` was shared, assume its SMTP password and
-`JWT_SECRET` are compromised even if `.env` is ignored by Git:
+If an archive containing `.env` was shared, assume its `JWT_SECRET` is
+compromised even if `.env` is ignored by Git:
 
-1. Revoke/change the SMTP application password with the provider. Update
-   `SMTP_PASSWORD` in the deployment secret store and restart every API instance.
-2. Generate a fresh `JWT_SECRET` with
+1. Generate a fresh `JWT_SECRET` with
    `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`.
    Set it in every environment and restart the API; all existing JWT sessions
    will become invalid and users must sign in again.
-3. Never include `.env`, `dist/`, `.git/` or `prisma/*.db` in an archive. Inspect
+2. Never include `.env`, `dist/`, `.git/` or `prisma/*.db` in an archive. Inspect
    the ZIP contents before sharing. For a committed revision, run:
 
    ```powershell

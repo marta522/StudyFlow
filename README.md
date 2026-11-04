@@ -2,6 +2,14 @@
 
 **StudyFlow** to aplikacja internetowa do organizacji korepetycji i zarządzania szkołą online. Łączy uczniów, korepetytorów i administratorów, umożliwiając rezerwowanie lekcji, śledzenie postępów, ocenianie zajęć oraz generowanie raportów finansowych.
 
+## Zrzuty ekranu
+
+Zrzuty pokazują lokalną wersję interfejsu; logowanie wymaga uruchomionego API.
+
+![Strona startowa StudyFlow](./studyflow-frontend/public/screenshots/landing.png)
+
+![Formularz logowania StudyFlow](./studyflow-frontend/public/screenshots/login.png)
+
 ## 🛠️ Stos technologiczny
 
 - **Backend:** NestJS, TypeScript, Prisma ORM, SQLite, JWT, Bcrypt
@@ -78,7 +86,7 @@ npx prisma db seed
 Remove-Item Env:SEED_DEMO_RESET
 ```
 
-Na macOS/Linux, z katalogu `studyflow-backend`, uruchom:
+W Git Bash lub macOS/Linux, z katalogu `studyflow-backend`, uruchom:
 
 ```bash
 SEED_DEMO_RESET=true npx prisma db seed
@@ -142,11 +150,16 @@ Sesja używa cookie `httpOnly`, `SameSite=Lax` i `Secure` w produkcji; żądania
 zmieniające dane wymagają ochrony CSRF. Używaj HTTPS, ogranicz `CORS_ORIGINS`
 do zaufanych adresów frontendu i ustaw `TRUST_PROXY` zgodnie z liczbą/adresami
 proxy w środowisku wdrożeniowym (lokalnie pozostaw `loopback`). Dokumentacja
-Swagger jest dostępna pod `/api/docs`.
+Swagger jest domyślnie dostępna pod `/api/docs` poza środowiskiem produkcyjnym;
+w produkcji można ją włączyć wyłącznie przez `ENABLE_SWAGGER=true`.
+Udział wynagrodzenia korepetytora w koszcie lekcji konfiguruje
+`TUTOR_SALARY_PERCENT` (domyślnie `80`, zakres `0`–`100`).
+Migracja katalogu usuwa zduplikowane nazwy przedmiotów i oferty korepetytorów,
+zachowując rekordy z najniższym ID; przed wdrożeniem migracji wykonaj kopię
+zapasową bazy danych.
 
-Jeśli `.env` był częścią udostępnionego ZIP-a, zmień hasło aplikacji SMTP u
-dostawcy i zaktualizuj `SMTP_PASSWORD` w sekretach środowiska. Wygeneruj też
-nowy `JWT_SECRET` poleceniem
+Jeśli `.env` był częścią udostępnionego ZIP-a, wygeneruj nowy `JWT_SECRET`
+poleceniem
 `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`,
 ustaw go we wszystkich instancjach backendu i zrestartuj je. Stare sesje
 staną się nieważne. Przed archiwizacją wyklucz `.env`, `dist/`, `.git/` i

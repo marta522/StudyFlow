@@ -9,13 +9,13 @@ describe('UsersService managed accounts', () => {
       findUnique: jest.fn(),
       findMany: jest.fn(),
     },
-    lesson: { count: jest.fn() },
+    lesson: { count: jest.fn(), findMany: jest.fn() },
     booking: { count: jest.fn() },
     review: { count: jest.fn() },
     monthlyGrade: { count: jest.fn() },
     subjectRequest: { count: jest.fn() },
     lessonIssue: { count: jest.fn() },
-    tutorSubject: { count: jest.fn() },
+    tutorSubject: { count: jest.fn(), findMany: jest.fn() },
     availability: { count: jest.fn() },
     adminAuditLog: {
       findMany: jest.fn(),
@@ -59,7 +59,11 @@ describe('UsersService managed accounts', () => {
       subjectRequest: { count: jest.fn().mockResolvedValue(0) },
       tutorSubject: { count: jest.fn().mockResolvedValue(0) },
       availability: { count: jest.fn().mockResolvedValue(0) },
-      role: { findUnique: jest.fn().mockResolvedValue({ id_roles: 1, name: 'student' }) },
+      role: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id_roles: 1, name: 'student' }),
+      },
       user: { update: jest.fn().mockResolvedValue(updatedUser) },
       adminAuditLog: { create: jest.fn().mockResolvedValue({}) },
     };
@@ -120,6 +124,57 @@ describe('UsersService managed accounts', () => {
       service.updateUser(2, 7, { role: 'student' }),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(tx.user.update).not.toHaveBeenCalled();
+  });
+
+  it('uses the configured tutor salary percentage when generating a report', async () => {
+    const previousPercentage = process.env.TUTOR_SALARY_PERCENT;
+    process.env.TUTOR_SALARY_PERCENT = '50';
+    prisma.lesson.findMany.mockResolvedValue([
+      {
+        id_lessons: 31,
+        lesson_date: new Date('2026-11-05T00:00:00.000Z'),
+        start_time: '14:00',
+        end_time: '15:00',
+        tutor_id: 7,
+        subject_id: 4,
+        tutor: { first_name: 'Tomasz', last_name: 'Kowalski' },
+        subject: { name: 'Matematyka' },
+        bookings: [{ student: { first_name: 'Anna', last_name: 'Nowak' } }],
+      },
+    ]);
+    prisma.tutorSubject.findMany.mockResolvedValue([
+      { tutor_id: 7, subject_id: 4, price_per_hour_cents: 10_000 },
+    ]);
+    const tx = {
+      financialReport: {
+        create: jest.fn().mockImplementation(async ({ data }) => ({
+          id_financial_reports: 12,
+          ...data,
+          created_at: new Date(),
+        })),
+      },
+      adminAuditLog: { create: jest.fn().mockResolvedValue({}) },
+    };
+    prisma.$transaction.mockImplementation(async (callback) =>
+      callback(tx as never),
+    );
+
+    try {
+      const report = await service.generateFinancialReport(2, {
+        month: 11,
+        year: 2026,
+      });
+
+      expect(report.total_student_cost).toBe(100);
+      expect(report.total_tutor_salary).toBe(50);
+      expect(report.details[0]?.tutor_salary).toBe(50);
+    } finally {
+      if (previousPercentage === undefined) {
+        delete process.env.TUTOR_SALARY_PERCENT;
+      } else {
+        process.env.TUTOR_SALARY_PERCENT = previousPercentage;
+      }
+    }
   });
 
   it('archives tutors with history instead of deleting historical records', async () => {

@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import api from "../api/axios";
+import { useFeedback } from "./useFeedback";
+import { LoadingCards } from "./LoadingCards";
 
 interface SubjectItem {
   id_subjects: number;
@@ -38,6 +40,7 @@ function getErrorMessage(error: unknown): string {
 }
 
 export function AdminSubjects({ onGoToRequests }: AdminSubjectsProps) {
+  const { confirm, notify } = useFeedback();
   const [subjects, setSubjects] = useState<SubjectItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -71,6 +74,14 @@ export function AdminSubjects({ onGoToRequests }: AdminSubjectsProps) {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (notice) notify(notice);
+  }, [notice, notify]);
+
+  useEffect(() => {
+    if (error) notify(error, "error");
+  }, [error, notify]);
 
   function openCreateForm() {
     setEditing(null);
@@ -121,9 +132,9 @@ export function AdminSubjects({ onGoToRequests }: AdminSubjectsProps) {
     const activating = subject.status === "INACTIVE";
     if (
       !activating &&
-      !window.confirm(
+      !(await confirm(
         `Dezaktywować przedmiot „${subject.name}”? Zachowane lekcje i oceny nie zostaną usunięte.`,
-      )
+      ))
     ) {
       return;
     }
@@ -221,15 +232,52 @@ export function AdminSubjects({ onGoToRequests }: AdminSubjectsProps) {
         </button>
       </div>
       {loading ? (
-        <p role="status" className="py-8 text-center text-brand-textMuted">
-          Ładowanie przedmiotów…
-        </p>
+        <LoadingCards label="Ładowanie przedmiotów" />
       ) : subjects.length === 0 ? (
         <p className="rounded-2xl border border-brand-cardBorder bg-brand-card p-8 text-center text-brand-textMuted">
           Baza przedmiotów jest pusta.
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-brand-cardBorder bg-brand-card">
+        <>
+        <div className="grid gap-3 md:hidden">
+          {subjects.map((subject) => (
+            <article
+              key={subject.id_subjects}
+              className="space-y-3 rounded-2xl border border-brand-cardBorder bg-brand-card p-4"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <h3 className="font-bold text-brand-yellow">{subject.name}</h3>
+                <span className="shrink-0 rounded-full border border-brand-cardBorder px-2.5 py-1 text-xs">
+                  {subject.status === "ACTIVE" ? "Aktywny" : "Nieaktywny"}
+                </span>
+              </div>
+              <p className="text-sm text-brand-textMuted">
+                {subject.description || "Brak opisu."}
+              </p>
+              <p className="text-xs text-brand-textMuted">
+                {subject._count.tutor_subjects} korepetytorów · {subject._count.lessons} lekcji
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => openEditForm(subject)}
+                  className="flex-1 rounded-lg border border-brand-cardBorder px-3 py-2 text-sm text-brand-yellow"
+                >
+                  Edytuj
+                </button>
+                <button
+                  type="button"
+                  disabled={changingId === subject.id_subjects}
+                  onClick={() => void handleStatusChange(subject)}
+                  className="flex-1 rounded-lg border border-brand-cardBorder px-3 py-2 text-sm text-white disabled:opacity-50"
+                >
+                  {subject.status === "ACTIVE" ? "Dezaktywuj" : "Aktywuj"}
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+        <div className="hidden overflow-x-auto rounded-2xl border border-brand-cardBorder bg-brand-card md:block">
           <table className="w-full text-left text-sm text-white">
             <thead className="border-b border-brand-cardBorder bg-brand-black text-xs uppercase text-brand-textMuted">
               <tr>
@@ -291,6 +339,7 @@ export function AdminSubjects({ onGoToRequests }: AdminSubjectsProps) {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {(editing !== null || createDialogOpen) && (

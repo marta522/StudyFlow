@@ -1,0 +1,1 @@
+export const DEFAULT_TUTOR_SALARY_PERCENT = 80;

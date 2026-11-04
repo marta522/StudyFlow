@@ -13,6 +13,7 @@ import { TutorsModule } from './tutors/tutors.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { LessonIssuesModule } from './lesson-issues/lesson-issues.module';
+import { DEFAULT_TUTOR_SALARY_PERCENT } from './common/financial-constants';
 
 @Module({
   imports: [
@@ -30,6 +31,22 @@ import { LessonIssuesModule } from './lesson-issues/lesson-issues.module';
           config.JWT_SECRET.length < 32
         ) {
           throw new Error('JWT_SECRET must be at least 32 characters long.');
+        }
+        const salarySetting = config.TUTOR_SALARY_PERCENT;
+        const tutorSalaryPercent =
+          salarySetting === undefined
+            ? DEFAULT_TUTOR_SALARY_PERCENT
+            : typeof salarySetting === 'string' && salarySetting.trim() === ''
+              ? Number.NaN
+              : Number(salarySetting);
+        if (
+          !Number.isFinite(tutorSalaryPercent) ||
+          tutorSalaryPercent < 0 ||
+          tutorSalaryPercent > 100
+        ) {
+          throw new Error(
+            'TUTOR_SALARY_PERCENT must be a number between 0 and 100.',
+          );
         }
         try {
           new Intl.DateTimeFormat('en-US', {

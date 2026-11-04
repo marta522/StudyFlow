@@ -3,6 +3,8 @@ import {
   BookOpen,
   CalendarDays,
   CheckCircle,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Pencil,
   PlusCircle,
@@ -10,50 +12,15 @@ import {
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import api from "../api/axios";
 import { useAuth } from "../context/useAuth";
-
-interface Subject {
-  id_subjects: number;
-  name: string;
-  description?: string | null;
-}
-
-interface TutorSubjectOffer {
-  id_tutor_subjects: number;
-  subject: Subject;
-}
-
-interface TutorAvailabilitySlot {
-  id_availability: number;
-  day_of_week: string;
-  start_time: string;
-  end_time: string;
-}
-
-interface TutorStudent {
-  id_users: number;
-  first_name: string;
-  last_name: string;
-}
-
-interface TutorBooking {
-  status: string;
-  student: TutorStudent;
-}
-
-interface Lesson {
-  id_lessons: number;
-  lesson_date: string;
-  start_time: string;
-  end_time: string;
-  subject: Subject;
-  tutor: {
-    id_users: number;
-    first_name: string;
-    last_name: string;
-  };
-}
+import { useFeedback } from "./useFeedback";
+import {
+  useLessonAvailability,
+  type AvailableLesson,
+  type TutorAvailabilitySlot,
+  type TutorStudent,
+  type TutorSubjectOffer,
+} from "../hooks/useLessonAvailability";
 
 interface ApiError {
   message?: string | string[];
@@ -99,15 +66,36 @@ function getTodayDate(): string {
   return `${year}-${month}-${day}`;
 }
 
+function dateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export function LessonsList() {
+  const { confirm, notify } = useFeedback();
   const { user } = useAuth();
-  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const {
+    fetchLessons,
+    fetchTutorOffer,
+    fetchTutorAvailability,
+    fetchTutorStudents,
+    bookLesson,
+    saveLesson,
+    deleteLesson: removeLesson,
+  } = useLessonAvailability();
+  const [lessons, setLessons] = useState<AvailableLesson[]>([]);
   const [subjects, setSubjects] = useState<TutorSubjectOffer[]>([]);
   const [students, setStudents] = useState<TutorStudent[]>([]);
   const [availability, setAvailability] = useState<TutorAvailabilitySlot[]>([]);
   const [selectedSubject, setSelectedSubject] = useState("");
   const [selectedStudent, setSelectedStudent] = useState("");
   const [lessonDate, setLessonDate] = useState("");
+  const [selectedAvailableDate, setSelectedAvailableDate] = useState("");
+  const [calendarMonth, setCalendarMonth] = useState(
+    () => new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+  );
   const [startTime, setStartTime] = useState("14:00");
   const [endTime, setEndTime] = useState("15:00");
   const [loading, setLoading] = useState(true);
@@ -126,11 +114,24 @@ export function LessonsList() {
   const [studentError, setStudentError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-
-  const fetchLessons = useCallback(async () => {
-    const { data } = await api.get<Lesson[]>("/bookings/available");
-    return data;
-  }, []);
+  const availableByDate = new Map<string, number>();
+  lessons.forEach((lesson) => {
+    const key = lesson.lesson_date.slice(0, 10);
+    availableByDate.set(key, (availableByDate.get(key) ?? 0) + 1);
+  });
+  const calendarStart = new Date(calendarMonth);
+  calendarStart.setDate(1 - ((calendarStart.getDay() + 6) % 7));
+  const calendarDates = Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(calendarStart);
+    date.setDate(calendarStart.getDate() + index);
+    return date;
+  });
+  const visibleLessons = selectedAvailableDate
+    ? lessons.filter(
+        (lesson) =>
+          lesson.lesson_date.slice(0, 10) === selectedAvailableDate,
+      )
+    : lessons;
 
   const loadLessons = useCallback(async () => {
     setLoading(true);
@@ -177,9 +178,8 @@ export function LessonsList() {
     }
 
     let cancelled = false;
-    void api
-      .get<TutorSubjectOffer[]>("/subjects/my-offer")
-      .then(({ data }) => {
+    void fetchTutorOffer()
+      .then((data) => {
         if (!cancelled) {
           setSubjects(data);
           setSelectedSubject(
@@ -201,15 +201,14 @@ export function LessonsList() {
     return () => {
       cancelled = true;
     };
-  }, [user?.role]);
+  }, [fetchTutorOffer, user?.role]);
 
   useEffect(() => {
     if (user?.role !== "tutor") return;
 
     let cancelled = false;
-    void api
-      .get<TutorAvailabilitySlot[]>("/tutors/me/availability")
-      .then(({ data }) => {
+    void fetchTutorAvailability()
+      .then((data) => {
         if (!cancelled) setAvailability(data);
       })
       .catch((requestError: unknown) => {
@@ -229,30 +228,16 @@ export function LessonsList() {
     return () => {
       cancelled = true;
     };
-  }, [user?.role]);
+  }, [fetchTutorAvailability, user?.role]);
 
   useEffect(() => {
     if (user?.role !== "tutor") return;
 
     let cancelled = false;
-    void api
-      .get<TutorBooking[]>("/bookings/my-bookings")
-      .then(({ data }) => {
+    void fetchTutorStudents()
+      .then((data) => {
         if (cancelled) return;
-        const studentsById = new Map<number, TutorStudent>();
-        data
-          .filter((booking) => booking.status !== "CANCELLED")
-          .forEach((booking) =>
-            studentsById.set(booking.student.id_users, booking.student),
-          );
-        setStudents(
-          [...studentsById.values()].sort((left, right) =>
-            `${left.last_name} ${left.first_name}`.localeCompare(
-              `${right.last_name} ${right.first_name}`,
-              "pl",
-            ),
-          ),
-        );
+        setStudents(data);
       })
       .catch((requestError: unknown) => {
         if (!cancelled) {
@@ -268,20 +253,26 @@ export function LessonsList() {
     return () => {
       cancelled = true;
     };
-  }, [user?.role]);
+  }, [fetchTutorStudents, user?.role]);
 
   useEffect(() => {
     if (!notice) return;
+    notify(notice);
     const timeoutId = window.setTimeout(() => setNotice(null), 4000);
     return () => window.clearTimeout(timeoutId);
-  }, [notice]);
+  }, [notice, notify]);
+
+  useEffect(() => {
+    if (error) notify(error, "error");
+    if (actionError) notify(actionError, "error");
+  }, [actionError, error, notify]);
 
   async function handleBook(lessonId: number) {
     setBookingLessonId(lessonId);
     setActionError(null);
     setNotice(null);
     try {
-      await api.post("/bookings/book", { lesson_id: lessonId });
+      await bookLesson(lessonId);
       setNotice("Pomyślnie zarezerwowano lekcję!");
       await loadLessons();
     } catch (requestError: unknown) {
@@ -315,14 +306,14 @@ export function LessonsList() {
           selectedStudent && { student_id: Number(selectedStudent) }),
       };
       if (editingLessonId === null) {
-        await api.post("/bookings/lessons", lessonData);
+        await saveLesson(null, lessonData);
         setNotice(
           selectedStudent
             ? "Dodano lekcję i przypisano ją do ucznia."
             : "Dodano nowy wolny termin zajęć.",
         );
       } else {
-        await api.patch(`/bookings/lessons/${editingLessonId}`, lessonData);
+        await saveLesson(editingLessonId, lessonData);
         setNotice("Zaktualizowano termin zajęć.");
         setEditingLessonId(null);
       }
@@ -338,7 +329,7 @@ export function LessonsList() {
     }
   }
 
-  function beginEdit(lesson: Lesson) {
+  function beginEdit(lesson: AvailableLesson) {
     setEditingLessonId(lesson.id_lessons);
     setSelectedSubject(String(lesson.subject.id_subjects));
     setSelectedStudent("");
@@ -349,11 +340,11 @@ export function LessonsList() {
     setNotice(null);
   }
 
-  async function deleteLesson(lesson: Lesson) {
+  async function deleteLesson(lesson: AvailableLesson) {
     if (
-      !window.confirm(
+      !(await confirm(
         `Czy usunąć wolny termin ${lesson.subject.name} z ${lesson.lesson_date.slice(0, 10)}?`,
-      )
+      ))
     ) {
       return;
     }
@@ -361,7 +352,7 @@ export function LessonsList() {
     setActionError(null);
     setNotice(null);
     try {
-      await api.delete(`/bookings/lessons/${lesson.id_lessons}`);
+      await removeLesson(lesson.id_lessons);
       setNotice("Termin zajęć został usunięty.");
       await loadLessons();
     } catch (requestError: unknown) {
@@ -654,17 +645,128 @@ export function LessonsList() {
           </div>
         )}
 
+        <section
+          aria-label="Kalendarz dostępnych lekcji"
+          className="mb-6 rounded-2xl border border-brand-cardBorder bg-brand-card p-4 sm:p-5"
+        >
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() =>
+                setCalendarMonth(
+                  (current) =>
+                    new Date(current.getFullYear(), current.getMonth() - 1, 1),
+                )
+              }
+              aria-label="Poprzedni miesiąc"
+              className="rounded-lg border border-brand-cardBorder p-2 text-brand-textMuted hover:border-brand-yellow hover:text-brand-yellow"
+            >
+              <ChevronLeft className="size-4" aria-hidden="true" />
+            </button>
+            <h3 className="font-semibold capitalize">
+              {calendarMonth.toLocaleDateString("pl-PL", {
+                month: "long",
+                year: "numeric",
+              })}
+            </h3>
+            <button
+              type="button"
+              onClick={() =>
+                setCalendarMonth(
+                  (current) =>
+                    new Date(current.getFullYear(), current.getMonth() + 1, 1),
+                )
+              }
+              aria-label="Następny miesiąc"
+              className="rounded-lg border border-brand-cardBorder p-2 text-brand-textMuted hover:border-brand-yellow hover:text-brand-yellow"
+            >
+              <ChevronRight className="size-4" aria-hidden="true" />
+            </button>
+          </div>
+          <div className="grid grid-cols-7 gap-1 text-center text-xs">
+            {["Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd"].map((day) => (
+              <span key={day} className="py-2 font-semibold text-brand-textMuted">
+                {day}
+              </span>
+            ))}
+            {calendarDates.map((date) => {
+              const key = dateKey(date);
+              const isCurrentMonth =
+                date.getMonth() === calendarMonth.getMonth();
+              const count = availableByDate.get(key) ?? 0;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  disabled={!isCurrentMonth}
+                  aria-label={`${date.toLocaleDateString("pl-PL", {
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  })}${count ? `, ${count} dostępnych lekcji` : ""}`}
+                  aria-pressed={selectedAvailableDate === key}
+                  onClick={() =>
+                    setSelectedAvailableDate((current) =>
+                      current === key ? "" : key,
+                    )
+                  }
+                  className={`relative mx-auto grid size-9 place-items-center rounded-lg text-sm transition sm:size-10 ${
+                    selectedAvailableDate === key
+                      ? "bg-brand-yellow font-bold text-brand-black"
+                      : count
+                        ? "bg-brand-yellow/10 text-brand-yellow hover:bg-brand-yellow/20"
+                        : "text-white hover:bg-white/5"
+                  } disabled:cursor-default disabled:text-white/20`}
+                >
+                  {date.getDate()}
+                  {count > 0 && selectedAvailableDate !== key && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute bottom-1 size-1 rounded-full bg-brand-yellow"
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs text-brand-textMuted">
+            <span>Wybierz dzień, aby zobaczyć dostępne terminy.</span>
+            {selectedAvailableDate && (
+              <button
+                type="button"
+                onClick={() => setSelectedAvailableDate("")}
+                className="font-semibold text-brand-yellow underline-offset-2 hover:underline"
+              >
+                Pokaż wszystkie dni
+              </button>
+            )}
+          </div>
+        </section>
+
         {loading ? (
-          <p role="status" className="py-8 text-center text-brand-textMuted">
-            Ładowanie terminów…
-          </p>
+          <div
+            role="status"
+            aria-label="Ładowanie dostępnych terminów"
+            className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3"
+          >
+            {Array.from({ length: 3 }, (_, index) => (
+              <div
+                key={index}
+                className="h-52 animate-pulse rounded-2xl border border-brand-cardBorder bg-brand-card"
+              />
+            ))}
+          </div>
         ) : !error && lessons.length === 0 ? (
           <p className="rounded-2xl border border-brand-cardBorder bg-brand-card p-6 text-center text-brand-textMuted">
             Brak dostępnych wolnych terminów w tym momencie.
           </p>
+        ) : !error && visibleLessons.length === 0 ? (
+          <p className="rounded-2xl border border-brand-cardBorder bg-brand-card p-6 text-center text-brand-textMuted">
+            Brak dostępnych terminów w wybranym dniu.
+          </p>
         ) : (
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {lessons.map((lesson) => (
+            {visibleLessons.map((lesson) => (
               <article
                 key={lesson.id_lessons}
                 className="space-y-4 rounded-2xl border border-brand-cardBorder bg-brand-card p-6 transition hover:border-brand-yellow/50"

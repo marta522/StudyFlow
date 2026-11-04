@@ -6,6 +6,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { DEFAULT_LIST_LIMIT } from '../common/pagination';
+import { completePastLessons } from '../common/lesson-completion';
 import { CreateReviewDto } from './dto/create-review.dto';
 
 @Injectable()
@@ -36,6 +37,7 @@ export class ReviewsService {
   }
 
   async createReview(studentId: number, dto: CreateReviewDto) {
+    await completePastLessons(this.prisma);
     const eligibleBooking = await this.prisma.booking.findFirst({
       where: {
         student_id: studentId,
