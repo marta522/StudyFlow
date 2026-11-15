@@ -42,7 +42,11 @@ interface Review {
 
 interface Booking {
   status: string;
-  lesson: { tutor: { id_users: number }; status: string };
+  lesson: {
+    tutor: { id_users: number };
+    status: string;
+    reviews: { id_reviews: number }[];
+  };
 }
 
 interface ApiError {
@@ -124,7 +128,9 @@ export function TutorDetailView({
               (booking) =>
                 booking.status !== "CANCELLED" &&
                 booking.lesson.tutor.id_users === tutorId &&
-                booking.lesson.status === "COMPLETED",
+                (booking.status === "COMPLETED" ||
+                  booking.lesson.status === "COMPLETED") &&
+                booking.lesson.reviews.length === 0,
             ),
           );
         },
@@ -165,18 +171,22 @@ export function TutorDetailView({
         rating,
         comment: comment.trim(),
       });
-      const refreshedReviews = await loadReviews();
-      const newRating =
-        refreshedReviews.reduce((sum, review) => sum + review.rating, 0) /
-        refreshedReviews.length;
-      setTutor((current) => {
-        if (!current) return current;
-        return {
-          ...current,
-          rating: Math.round(newRating * 100) / 100,
-          rating_count: refreshedReviews.length,
-        };
-      });
+      const [, profileResponse, bookingsResponse] = await Promise.all([
+        loadReviews(),
+        api.get<TutorDetail>(`/tutors/${tutorId}/profile`),
+        api.get<Booking[]>("/bookings/my-bookings"),
+      ]);
+      setTutor(profileResponse.data);
+      setCanReview(
+        bookingsResponse.data.some(
+          (booking) =>
+            booking.status !== "CANCELLED" &&
+            booking.lesson.tutor.id_users === tutorId &&
+            (booking.status === "COMPLETED" ||
+              booking.lesson.status === "COMPLETED") &&
+            booking.lesson.reviews.length === 0,
+        ),
+      );
       setComment("");
       setNotice("Twoja opinia została dodana.");
     } catch (requestError: unknown) {

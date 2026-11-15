@@ -44,9 +44,6 @@ model User {
   subject_requests_created  SubjectRequest[]     @relation("TutorRequests")
   subject_requests_reviewed SubjectRequest[]     @relation("AdminReviewedRequests")
   cancelled_lessons         Lesson[]             @relation("LessonCanceller")
-  audit_events              AdminAuditLog[]      @relation("AuditActor")
-  reported_lesson_issues    LessonIssue[]        @relation("IssueReporter")
-  resolved_lesson_issues    LessonIssue[]        @relation("IssueResolver")
   financial_reports         FinancialReport[]
   notifications             Notification[]
 
@@ -119,8 +116,6 @@ model Lesson {
   bookings       Booking[]
   reviews        Review[]
   monthly_grades MonthlyGrade[]
-  issues         LessonIssue[]
-
   @@index([tutor_id, lesson_date])
   @@map("lessons")
 }
@@ -194,27 +189,6 @@ model MonthlyGrade {
   @@map("monthly_grades")
 }
 
-model LessonIssue {
-  id_lesson_issues Int      @id @default(autoincrement())
-  lesson_id        Int
-  reporter_id      Int
-  title            String
-  description      String
-  status           String   @default("OPEN")
-  admin_note       String?
-  resolved_by      Int?
-  created_at       DateTime @default(now())
-  updated_at       DateTime @updatedAt
-
-  lesson   Lesson @relation(fields: [lesson_id], references: [id_lessons], onDelete: Cascade)
-  reporter User   @relation("IssueReporter", fields: [reporter_id], references: [id_users], onDelete: Cascade)
-  resolver User?  @relation("IssueResolver", fields: [resolved_by], references: [id_users], onDelete: SetNull)
-
-  @@index([status, created_at])
-  @@index([reporter_id, lesson_id])
-  @@map("lesson_issues")
-}
-
 model SubjectRequest {
   id_subject_requests Int       @id @default(autoincrement())
   tutor_id            Int
@@ -262,19 +236,4 @@ model Notification {
 
   @@index([user_id, read_at, created_at])
   @@map("notifications")
-}
-
-model AdminAuditLog {
-  id_admin_audit_logs Int      @id @default(autoincrement())
-  actor_id            Int?
-  action              String
-  entity_type         String
-  entity_id           Int?
-  details             String   @default("{}")
-  created_at          DateTime @default(now())
-
-  actor User? @relation("AuditActor", fields: [actor_id], references: [id_users], onDelete: SetNull)
-
-  @@index([created_at, action, entity_type])
-  @@map("admin_audit_logs")
 }

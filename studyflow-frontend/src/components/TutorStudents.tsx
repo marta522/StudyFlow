@@ -873,6 +873,10 @@ export function TutorStudents() {
               onSubmit={(event) => void handleMarkAttendance(event)}
               className="space-y-4"
             >
+              <p className="text-sm text-brand-textMuted">
+                Zapisanie obecności potwierdza odbycie lekcji i oznacza ją jako
+                zakończoną.
+              </p>
               <label className="block text-sm text-brand-textMuted">
                 Zakończona rezerwacja
                 <select

@@ -58,6 +58,10 @@ export class AttendanceService {
           where: { id_lessons: booking.lesson.id_lessons },
           data: { status: 'COMPLETED' },
         });
+        await tx.booking.update({
+          where: { id_bookings: dto.booking_id },
+          data: { status: 'COMPLETED' },
+        });
         return attendance;
       });
     } catch (error) {

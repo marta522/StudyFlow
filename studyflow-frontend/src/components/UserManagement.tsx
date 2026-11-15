@@ -59,30 +59,6 @@ function formatLessonStatus(status: string): string {
   }
 }
 
-function formatActivityAction(action: string): string {
-  const actionLabels: Record<string, string> = {
-    USER_CREATED: "Utworzono konto użytkownika",
-    USER_UPDATED: "Zmieniono dane konta",
-    USER_DETAILS_UPDATED: "Zmieniono dane konta",
-    USER_BLOCKED: "Zablokowano konto",
-    USER_UNBLOCKED: "Odblokowano konto",
-    TUTOR_ARCHIVED: "Zarchiwizowano konto korepetytora",
-    TUTOR_DELETED: "Usunięto konto korepetytora",
-    LESSON_CREATED: "Dodano termin lekcji",
-    LESSON_UPDATED: "Zmieniono termin lekcji",
-    LESSON_CANCELLED: "Odwołano lekcję",
-    LESSON_DELETED: "Usunięto termin lekcji",
-    LESSON_ISSUE_UPDATED: "Zaktualizowano zgłoszenie dotyczące lekcji",
-    SUBJECT_REQUEST_APPROVED: "Zaakceptowano zgłoszenie przedmiotu",
-    SUBJECT_REQUEST_REJECTED: "Odrzucono zgłoszenie przedmiotu",
-    FINANCIAL_REPORT_GENERATED: "Wygenerowano raport finansowy",
-  };
-  return (
-    actionLabels[action] ??
-    `Inne działanie: ${action.replace(/_/g, " ").toLowerCase()}`
-  );
-}
-
 export function UserManagement() {
   const { confirm, notify } = useFeedback();
   const userOperations = useManagedUserOperations();
@@ -1004,63 +980,6 @@ export function UserManagement() {
                                     {` · ${formatLessonStatus(lesson.status)}`}
                                   </li>
                                 ))}
-                              </ul>
-                            </div>
-                          )}
-                          {activity.auditEvents.length > 0 && (
-                            <div>
-                              <h4 className="mb-1 text-sm font-semibold text-brand-yellow">
-                                Historia działań
-                              </h4>
-                              <ul className="space-y-2 text-xs text-brand-textMuted">
-                                {activity.auditEvents.map((entry) => {
-                                  const relatedLesson =
-                                    entry.entity_type === "lesson" &&
-                                    entry.entity_id !== null
-                                      ? [
-                                          ...activity.user.lessons_as_tutor,
-                                          ...activity.user.bookings_as_student.map(
-                                            (booking) => booking.lesson,
-                                          ),
-                                        ].find(
-                                          (lesson) =>
-                                            lesson.id_lessons === entry.entity_id,
-                                        )
-                                      : undefined;
-
-                                  return (
-                                    <li
-                                      key={entry.id_admin_audit_logs}
-                                      className="rounded-lg bg-brand-black/60 px-3 py-2"
-                                    >
-                                      <p className="font-medium text-white">
-                                        {formatActivityAction(entry.action)}
-                                      </p>
-                                      {relatedLesson ? (
-                                        <p className="mt-1">
-                                          {relatedLesson.subject.name}
-                                          {" · "}
-                                          {formatDateOnly(
-                                            relatedLesson.lesson_date,
-                                          )}
-                                          {` · ${relatedLesson.start_time}–${relatedLesson.end_time}`}
-                                        </p>
-                                      ) : entry.entity_type === "lesson" &&
-                                        entry.entity_id !== null ? (
-                                        <p className="mt-1">
-                                          Lekcja nr {entry.entity_id}
-                                        </p>
-                                      ) : null}
-                                      <p className="mt-1">
-                                        {new Date(entry.created_at).toLocaleString("pl-PL")}
-                                        {" · "}
-                                        {entry.actor
-                                          ? `Wykonał(a): ${entry.actor.first_name} ${entry.actor.last_name}`
-                                          : "Wykonawca: usunięte konto"}
-                                      </p>
-                                    </li>
-                                  );
-                                })}
                               </ul>
                             </div>
                           )}

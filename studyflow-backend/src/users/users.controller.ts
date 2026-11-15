@@ -7,7 +7,6 @@ import {
   ParseIntPipe,
   Patch,
   Post,
-  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -19,7 +18,6 @@ import { CreateManagedUserDto } from './dto/create-managed-user.dto';
 import { GenerateFinancialReportDto } from './dto/generate-financial-report.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
-import { SearchAuditLogDto } from './dto/search-audit-log.dto';
 import { UsersService } from './users.service';
 
 interface AuthenticatedRequest {
@@ -38,21 +36,13 @@ export class UsersController {
   }
 
   @Post()
-  createManagedUser(
-    @Req() request: AuthenticatedRequest,
-    @Body() dto: CreateManagedUserDto,
-  ) {
-    return this.usersService.createManagedUser(request.user.id, dto);
+  createManagedUser(@Body() dto: CreateManagedUserDto) {
+    return this.usersService.createManagedUser(dto);
   }
 
   @Get('metrics')
   getDashboardMetrics() {
     return this.usersService.getDashboardMetrics();
-  }
-
-  @Get('audit')
-  getAuditLog(@Query() query: SearchAuditLogDto) {
-    return this.usersService.getAuditLog(query);
   }
 
   @Get(':id/activity')
@@ -80,27 +70,22 @@ export class UsersController {
 
   @Patch(':id')
   updateUser(
-    @Req() request: AuthenticatedRequest,
     @Param('id', ParseIntPipe) userId: number,
     @Body() dto: UpdateUserDto,
   ) {
-    return this.usersService.updateUser(request.user.id, userId, dto);
+    return this.usersService.updateUser(userId, dto);
   }
 
   @Patch(':id/status')
   updateUserStatus(
-    @Req() request: AuthenticatedRequest,
     @Param('id', ParseIntPipe) userId: number,
     @Body() dto: UpdateUserStatusDto,
   ) {
-    return this.usersService.updateUserStatus(request.user.id, userId, dto);
+    return this.usersService.updateUserStatus(userId, dto);
   }
 
   @Delete(':id')
-  deleteTutor(
-    @Req() request: AuthenticatedRequest,
-    @Param('id', ParseIntPipe) userId: number,
-  ) {
-    return this.usersService.deleteTutor(request.user.id, userId);
+  deleteTutor(@Param('id', ParseIntPipe) userId: number) {
+    return this.usersService.deleteTutor(userId);
   }
 }

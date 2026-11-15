@@ -12,7 +12,6 @@ import { UsersModule } from './users/users.module';
 import { TutorsModule } from './tutors/tutors.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { NotificationsModule } from './notifications/notifications.module';
-import { LessonIssuesModule } from './lesson-issues/lesson-issues.module';
 import { DEFAULT_TUTOR_SALARY_PERCENT } from './common/financial-constants';
 
 @Module({
@@ -71,7 +70,6 @@ import { DEFAULT_TUTOR_SALARY_PERCENT } from './common/financial-constants';
     TutorsModule,
     ReviewsModule,
     NotificationsModule,
-    LessonIssuesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

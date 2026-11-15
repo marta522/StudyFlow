@@ -29,15 +29,6 @@ export interface UserActivity {
   tutoringLessonCount: number;
   reviewCount: number;
   gradeCount: number;
-  auditEvents: {
-    id_admin_audit_logs: number;
-    action: string;
-    entity_type: string;
-    entity_id: number | null;
-    details: string;
-    created_at: string;
-    actor: { first_name: string; last_name: string } | null;
-  }[];
 }
 
 export interface CreateUserPayload {

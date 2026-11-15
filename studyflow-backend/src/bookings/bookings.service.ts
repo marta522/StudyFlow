@@ -3,10 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
-  Logger,
   NotFoundException,
-  OnModuleDestroy,
-  OnModuleInit,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -17,34 +14,12 @@ import { UpdateLessonDto } from './dto/update-lesson.dto';
 import { CreateAdminLessonDto } from './dto/create-admin-lesson.dto';
 import { UpdateAdminLessonDto } from './dto/update-admin-lesson.dto';
 import { DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT } from '../common/pagination';
-import { completePastLessons } from '../common/lesson-completion';
 
 @Injectable()
-export class BookingsService implements OnModuleInit, OnModuleDestroy {
+export class BookingsService {
   private readonly appTimeZone = process.env.APP_TIMEZONE ?? 'Europe/Warsaw';
-  private readonly logger = new Logger(BookingsService.name);
-  private completionTimer?: NodeJS.Timeout;
 
   constructor(private readonly prisma: PrismaService) {}
-
-  onModuleInit() {
-    const completeExpiredLessons = () => {
-      void completePastLessons(this.prisma).catch((error: unknown) => {
-        this.logger.error(
-          'Automatic lesson completion failed.',
-          error instanceof Error ? error.stack : String(error),
-        );
-      });
-    };
-
-    completeExpiredLessons();
-    this.completionTimer = setInterval(completeExpiredLessons, 60_000);
-    this.completionTimer.unref();
-  }
-
-  onModuleDestroy() {
-    if (this.completionTimer) clearInterval(this.completionTimer);
-  }
 
   private rethrowTransactionError(
     error: unknown,
@@ -179,21 +154,6 @@ export class BookingsService implements OnModuleInit, OnModuleDestroy {
               }),
             ),
           );
-          await tx.adminAuditLog.create({
-            data: {
-              actor_id: tutorId,
-              action: 'LESSON_CREATED',
-              entity_type: 'lesson',
-              entity_id: lesson.id_lessons,
-              details: JSON.stringify({
-                tutorId: lesson.tutor_id,
-                subjectId: lesson.subject_id,
-                lessonDate: lesson.lesson_date.toISOString().slice(0, 10),
-                startTime: lesson.start_time,
-                endTime: lesson.end_time,
-              }),
-            },
-          });
           return lesson;
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
@@ -298,30 +258,6 @@ export class BookingsService implements OnModuleInit, OnModuleDestroy {
               ...(dto.homework !== undefined && { homework: dto.homework }),
             },
           });
-          await tx.adminAuditLog.create({
-            data: {
-              actor_id: tutorId,
-              action: 'LESSON_UPDATED',
-              entity_type: 'lesson',
-              entity_id: lessonId,
-              details: JSON.stringify({
-                previous: {
-                  subjectId: lesson.subject_id,
-                  lessonDate: lesson.lesson_date.toISOString().slice(0, 10),
-                  startTime: lesson.start_time,
-                  endTime: lesson.end_time,
-                },
-                current: {
-                  subjectId,
-                  lessonDate: updatedLesson.lesson_date
-                    .toISOString()
-                    .slice(0, 10),
-                  startTime,
-                  endTime,
-                },
-              }),
-            },
-          });
           return updatedLesson;
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
@@ -354,20 +290,6 @@ export class BookingsService implements OnModuleInit, OnModuleDestroy {
             );
           }
 
-          await tx.adminAuditLog.create({
-            data: {
-              actor_id: tutorId,
-              action: 'LESSON_DELETED',
-              entity_type: 'lesson',
-              entity_id: lessonId,
-              details: JSON.stringify({
-                subject: lesson.subject.name,
-                lessonDate: lesson.lesson_date.toISOString().slice(0, 10),
-                startTime: lesson.start_time,
-                endTime: lesson.end_time,
-              }),
-            },
-          });
           await tx.lesson.delete({ where: { id_lessons: lessonId } });
           return { id_lessons: lessonId };
         },
@@ -497,21 +419,6 @@ export class BookingsService implements OnModuleInit, OnModuleDestroy {
             }),
           ),
         );
-        await tx.adminAuditLog.create({
-          data: {
-            actor_id: adminId,
-            action: 'LESSON_CREATED',
-            entity_type: 'lesson',
-            entity_id: lesson.id_lessons,
-            details: JSON.stringify({
-              tutorId: lesson.tutor_id,
-              subjectId: lesson.subject_id,
-              lessonDate: lesson.lesson_date.toISOString().slice(0, 10),
-              startTime: lesson.start_time,
-              endTime: lesson.end_time,
-            }),
-          },
-        });
         return lesson;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
@@ -650,32 +557,6 @@ export class BookingsService implements OnModuleInit, OnModuleDestroy {
               }),
             ),
           );
-          await tx.adminAuditLog.create({
-            data: {
-              actor_id: adminId,
-              action: 'LESSON_UPDATED',
-              entity_type: 'lesson',
-              entity_id: lessonId,
-              details: JSON.stringify({
-                previous: {
-                  tutorId: lesson.tutor_id,
-                  subjectId: lesson.subject_id,
-                  lessonDate: lesson.lesson_date.toISOString().slice(0, 10),
-                  startTime: lesson.start_time,
-                  endTime: lesson.end_time,
-                },
-                current: {
-                  tutorId,
-                  subjectId,
-                  lessonDate: updatedLesson.lesson_date
-                    .toISOString()
-                    .slice(0, 10),
-                  startTime,
-                  endTime,
-                },
-              }),
-            },
-          });
         }
         return updatedLesson;
       },
@@ -738,20 +619,6 @@ export class BookingsService implements OnModuleInit, OnModuleDestroy {
           }),
         ),
       );
-      await tx.adminAuditLog.create({
-        data: {
-          actor_id: adminId,
-          action: 'LESSON_CANCELLED',
-          entity_type: 'lesson',
-          entity_id: lessonId,
-          details: JSON.stringify({
-            subject: lesson.subject.name,
-            lessonDate: lesson.lesson_date.toISOString().slice(0, 10),
-            startTime: lesson.start_time,
-            endTime: lesson.end_time,
-          }),
-        },
-      });
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
       const recentCancellationCount = await tx.lesson.count({
         where: {
@@ -891,7 +758,6 @@ export class BookingsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getUserBookings(userId: number, role: string) {
-    await completePastLessons(this.prisma);
     if (role === 'student') {
       return this.prisma.booking.findMany({
         where: { student_id: userId },
@@ -906,6 +772,10 @@ export class BookingsService implements OnModuleInit, OnModuleDestroy {
                   last_name: true,
                   email: true,
                 },
+              },
+              reviews: {
+                where: { student_id: userId },
+                select: { id_reviews: true },
               },
               cancelled_by_user: {
                 select: { first_name: true, last_name: true },

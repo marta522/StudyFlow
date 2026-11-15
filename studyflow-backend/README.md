@@ -102,12 +102,8 @@ transferred to SQLite.
 | `GET` | `/api/users/reports/financial` | Administrator | Lists generated financial reports. |
 | `GET` | `/api/users/reports/financial/:id` | Administrator | Returns a saved report and its lesson details. |
 | `POST` | `/api/users/reports/financial` | Administrator | Generates and persists a report for a month and year. |
-| `POST` | `/api/lesson-issues` | Student, tutor | Reports a problem with a lesson the user participates in. |
-| `GET` | `/api/lesson-issues/mine` | Student, tutor | Lists the current user's reports. |
-| `GET` | `/api/lesson-issues/admin` | Administrator | Lists and filters lesson issue reports. |
-| `PATCH` | `/api/lesson-issues/admin/:id` | Administrator | Updates a report status and sends the reporter a notification. |
 
-Deleting a tutor with lesson, review, grade, request, or reported-issue history
+Deleting a tutor with lesson, review, grade, or request history
 archives the account by blocking it and revoking existing sessions. The
 historical records remain intact. Tutors without linked history can be deleted.
 

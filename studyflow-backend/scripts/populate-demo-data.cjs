@@ -6,7 +6,6 @@ const backendRoot = path.resolve(__dirname, '..');
 process.loadEnvFile(path.join(backendRoot, '.env'));
 
 const prisma = new PrismaClient();
-const expansionKey = 'DEMO_DATA_EXPANSION_LARGE_V1';
 const demoPassword = 'Haslo123';
 const subjectDefinitions = [
   ['Chemia', 'Chemia ogólna, organiczna i przygotowanie do matury.'],
@@ -120,14 +119,13 @@ function assertLocalDevelopmentDatabase() {
 async function main() {
   assertLocalDevelopmentDatabase();
 
-  const existingExpansion = await prisma.adminAuditLog.findFirst({
+  const existingDemoStudent = await prisma.user.findUnique({
     where: {
-      action: 'DEMO_DATA_EXPANSION',
-      details: { contains: expansionKey },
+      email: `demo.student${String(studentDefinitions.length).padStart(2, '0')}@studyflow.local`,
     },
-    select: { id_admin_audit_logs: true },
+    select: { id_users: true },
   });
-  if (existingExpansion) {
+  if (existingDemoStudent) {
     console.log(
       'Rozszerzony zestaw demo został już dodany. Nie wprowadzono zmian.',
     );
@@ -416,59 +414,6 @@ async function main() {
         requestsCreated += 1;
       }
 
-      let issuesCreated = 0;
-      for (const item of createdLessons.filter((entry) => entry.isPast).slice(0, 3)) {
-        const reporterId = item.student.id_users;
-        const title = 'Przykładowe pytanie dotyczące przebiegu lekcji';
-        const exists = await tx.lessonIssue.findFirst({
-          where: {
-            lesson_id: item.lesson.id_lessons,
-            reporter_id: reporterId,
-            title,
-          },
-          select: { id_lesson_issues: true },
-        });
-        if (exists) continue;
-        const issue = await tx.lessonIssue.create({
-          data: {
-            lesson_id: item.lesson.id_lessons,
-            reporter_id: reporterId,
-            title,
-            description:
-              'To demonstracyjne zgłoszenie służy do sprawdzenia kolejki administratora. Nie wymaga rzeczywistej interwencji.',
-            status: issuesCreated === 0 ? 'OPEN' : 'IN_PROGRESS',
-          },
-        });
-        await tx.notification.create({
-          data: {
-            user_id: admin.id_users,
-            title: 'Demonstracyjne zgłoszenie lekcji',
-            message: `Dodano przykładowe zgłoszenie: ${issue.title}.`,
-            type: 'ADMIN_LESSON_ISSUE',
-          },
-        });
-        issuesCreated += 1;
-      }
-
-      await tx.adminAuditLog.create({
-        data: {
-          actor_id: admin.id_users,
-          action: 'DEMO_DATA_EXPANSION',
-          entity_type: 'demo_data',
-          details: JSON.stringify({
-            key: expansionKey,
-            subjectsAddedOrReused: subjects.length,
-            demoTutors: tutors.length,
-            demoStudents: students.length,
-            lessonsAdded: createdLessons.length,
-            bookingsAdded: createdBookings.length,
-            financialReportsAdded: reportsCreated,
-            subjectRequestsAdded: requestsCreated,
-            lessonIssuesAdded: issuesCreated,
-          }),
-        },
-      });
-
       return {
         subjects: subjects.length,
         tutors: tutors.length,
@@ -479,7 +424,6 @@ async function main() {
         bookings: createdBookings.length,
         reports: reportsCreated,
         requests: requestsCreated,
-        issues: issuesCreated,
       };
     },
     { maxWait: 15000, timeout: 120000 },

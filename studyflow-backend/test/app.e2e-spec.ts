@@ -124,7 +124,6 @@ describe('Booking flow (e2e)', () => {
         ),
       },
       notification: { create: jest.fn(async () => ({})) },
-      adminAuditLog: { create: jest.fn(async () => ({})) },
     };
 
     return {

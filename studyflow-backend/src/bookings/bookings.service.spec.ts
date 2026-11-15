@@ -6,6 +6,7 @@ import { BookingsService } from './bookings.service';
 describe('BookingsService schedule changes', () => {
   const prisma = {
     lesson: { findMany: jest.fn() },
+    booking: { findMany: jest.fn() },
     $transaction: jest.fn(),
   };
   let service: BookingsService;
@@ -57,7 +58,6 @@ describe('BookingsService schedule changes', () => {
         findFirst: jest.fn().mockResolvedValue({ id_availability: 1 }),
       },
       notification: { create: jest.fn().mockResolvedValue({}) },
-      adminAuditLog: { create: jest.fn().mockResolvedValue({}) },
     };
     prisma.$transaction.mockImplementation(async (callback) =>
       callback(tx as never),
@@ -79,15 +79,6 @@ describe('BookingsService schedule changes', () => {
       }),
     );
     expect(tx.notification.create).toHaveBeenCalledTimes(3);
-    expect(tx.adminAuditLog.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          actor_id: 2,
-          action: 'LESSON_UPDATED',
-          entity_id: 3,
-        }),
-      }),
-    );
     expect(
       tx.notification.create.mock.calls
         .map(([call]) => call.data.user_id)
@@ -110,6 +101,35 @@ describe('BookingsService schedule changes', () => {
     expect(prisma.lesson.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ status: 'CANCELLED' }),
+      }),
+    );
+  });
+
+  it('does not automatically complete a lesson when bookings are requested', async () => {
+    const bookings = [
+      {
+        id_bookings: 21,
+        lesson: { status: 'SCHEDULED' },
+      },
+    ];
+    prisma.booking.findMany.mockResolvedValue(bookings);
+
+    await expect(service.getUserBookings(9, 'student')).resolves.toEqual(
+      bookings,
+    );
+    expect(prisma.booking.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { student_id: 9 },
+        include: expect.objectContaining({
+          lesson: expect.objectContaining({
+            include: expect.objectContaining({
+              reviews: {
+                where: { student_id: 9 },
+                select: { id_reviews: true },
+              },
+            }),
+          }),
+        }),
       }),
     );
   });

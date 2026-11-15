@@ -373,21 +373,6 @@ export class SubjectsService {
               type: 'SUBJECT_REQUEST',
             },
           });
-          await tx.adminAuditLog.create({
-            data: {
-              actor_id: reviewerId,
-              action:
-                status === RequestStatus.APPROVED
-                  ? 'SUBJECT_REQUEST_APPROVED'
-                  : 'SUBJECT_REQUEST_REJECTED',
-              entity_type: 'subject_request',
-              entity_id: requestId,
-              details: JSON.stringify({
-                subjectName: request.subject_name,
-                tutorId: request.tutor_id,
-              }),
-            },
-          });
           return reviewedRequest;
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },

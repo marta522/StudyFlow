@@ -74,11 +74,6 @@ const AdminSchedule = lazy(() =>
     default: module.AdminSchedule,
   })),
 );
-const AdminLessonIssues = lazy(() =>
-  import("../components/AdminLessonIssues").then((module) => ({
-    default: module.AdminLessonIssues,
-  })),
-);
 const AdminSubjects = lazy(() =>
   import("../components/AdminSubjects").then((module) => ({
     default: module.AdminSubjects,
@@ -98,8 +93,7 @@ type DashboardTab =
   | "tutor-availability"
   | "tutor-profile"
   | "admin-metrics"
-  | "admin-subjects"
-  | "admin-issues";
+  | "admin-subjects";
 
 function isAllowedDashboardTab(
   tab: string,
@@ -135,7 +129,6 @@ export function DashboardPage() {
               "users",
               "my-bookings",
               "admin-subjects",
-              "admin-issues",
               "subject-requests",
               "reports",
             ]
@@ -266,9 +259,6 @@ export function DashboardPage() {
             <AdminSubjects
               onGoToRequests={() => handleTabChange("subject-requests")}
             />
-          )}
-          {activeTab === "admin-issues" && user?.role === "admin" && (
-            <AdminLessonIssues />
           )}
           {activeTab === "tutor-students" && user?.role === "tutor" && (
             <TutorStudents />

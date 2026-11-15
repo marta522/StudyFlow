@@ -6,7 +6,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
-  MessageSquareWarning,
   RefreshCw,
   Search,
   UserRound,
@@ -15,11 +14,9 @@ import {
   useEffect,
   useRef,
   useState,
-  type FormEvent,
 } from "react";
 import { useAuth } from "../context/useAuth";
 import { useBookings, type Booking } from "../hooks/useBookings";
-import { useLessonIssues } from "../hooks/useLessonIssues";
 import { Link } from "react-router-dom";
 import { useFeedback } from "./useFeedback";
 
@@ -84,7 +81,6 @@ export function MyBookings({
 }) {
   const { notify } = useFeedback();
   const { user } = useAuth();
-  const submitLessonIssueRequest = useLessonIssues();
   const bookingsQuery = useBookings<Booking>(user?.id);
   const bookings = bookingsQuery.data ?? [];
   const [selectedPeriod, setSelectedPeriod] = useState<"upcoming" | "past">(
@@ -103,12 +99,6 @@ export function MyBookings({
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()));
   const [todayKey] = useState(() => dateKey(new Date()));
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
-  const [issueFormOpen, setIssueFormOpen] = useState(false);
-  const [issueTitle, setIssueTitle] = useState("");
-  const [issueDescription, setIssueDescription] = useState("");
-  const [issueError, setIssueError] = useState<string | null>(null);
-  const [issueSent, setIssueSent] = useState(false);
-  const [sendingIssue, setSendingIssue] = useState(false);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const dialogTitleRef = useRef<HTMLHeadingElement>(null);
   const loading = bookingsQuery.isPending;
@@ -116,14 +106,6 @@ export function MyBookings({
     ? getErrorMessage(bookingsQuery.error)
     : null;
   const isDialogOpen = selectedBooking !== null;
-
-  useEffect(() => {
-    if (issueSent) notify("Zgłoszenie dotyczące lekcji zostało wysłane.");
-  }, [issueSent, notify]);
-
-  useEffect(() => {
-    if (issueError) notify(issueError, "error");
-  }, [issueError, notify]);
 
   useEffect(() => {
     if (error) notify(error, "error");
@@ -204,35 +186,10 @@ export function MyBookings({
         ? document.activeElement
         : null;
     setSelectedBooking(booking);
-    setIssueFormOpen(false);
-    setIssueTitle("");
-    setIssueDescription("");
-    setIssueError(null);
-    setIssueSent(false);
   }
 
   function closeBookingDetails() {
     setSelectedBooking(null);
-  }
-
-  async function submitLessonIssue(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selectedBooking) return;
-    setSendingIssue(true);
-    setIssueError(null);
-    try {
-      await submitLessonIssueRequest(
-        selectedBooking.lesson.id_lessons,
-        issueTitle,
-        issueDescription,
-      );
-      setIssueSent(true);
-      setIssueFormOpen(false);
-    } catch (requestError: unknown) {
-      setIssueError(getErrorMessage(requestError));
-    } finally {
-      setSendingIssue(false);
-    }
   }
 
   useEffect(() => {
@@ -260,7 +217,9 @@ export function MyBookings({
           const isCancelled =
             booking.status === "CANCELLED" ||
             booking.lesson.status === "CANCELLED";
-          const isCompleted = booking.lesson.status === "COMPLETED";
+          const isCompleted =
+            booking.status === "COMPLETED" ||
+            booking.lesson.status === "COMPLETED";
 
           return (
             <article
@@ -802,79 +761,6 @@ export function MyBookings({
             >
               Zamknij
             </button>
-            {(user?.role === "student" || user?.role === "tutor") && (
-              <div className="mt-4 border-t border-brand-cardBorder pt-4">
-                {issueSent ? (
-                  <p
-                    role="status"
-                    className="rounded-lg border border-green-500/30 bg-green-500/10 p-3 text-sm text-green-200"
-                  >
-                    Zgłoszenie zostało wysłane do administratora.
-                  </p>
-                ) : issueFormOpen ? (
-                  <form onSubmit={submitLessonIssue} className="space-y-3">
-                    <h4 className="font-semibold text-white">
-                      Zgłoś problem z lekcją
-                    </h4>
-                    {issueError && (
-                      <p role="alert" className="text-sm text-red-300">
-                        {issueError}
-                      </p>
-                    )}
-                    <label className="block space-y-1 text-sm text-brand-textMuted">
-                      Temat
-                      <input
-                        required
-                        minLength={3}
-                        maxLength={100}
-                        value={issueTitle}
-                        onChange={(event) => setIssueTitle(event.target.value)}
-                        className="w-full rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2 text-white"
-                      />
-                    </label>
-                    <label className="block space-y-1 text-sm text-brand-textMuted">
-                      Opis problemu
-                      <textarea
-                        required
-                        minLength={10}
-                        maxLength={2000}
-                        rows={4}
-                        value={issueDescription}
-                        onChange={(event) =>
-                          setIssueDescription(event.target.value)
-                        }
-                        className="w-full resize-y rounded-lg border border-brand-cardBorder bg-brand-black px-3 py-2 text-white"
-                      />
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="submit"
-                        disabled={sendingIssue}
-                        className="rounded-lg bg-brand-yellow px-4 py-2 font-semibold text-brand-black disabled:opacity-50"
-                      >
-                        {sendingIssue ? "Wysyłanie…" : "Wyślij zgłoszenie"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setIssueFormOpen(false)}
-                        className="rounded-lg border border-brand-cardBorder px-4 py-2 text-brand-textMuted"
-                      >
-                        Anuluj
-                      </button>
-                    </div>
-                  </form>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setIssueFormOpen(true)}
-                    className="inline-flex items-center gap-2 rounded-lg border border-brand-cardBorder px-4 py-2 text-sm text-brand-yellow hover:border-brand-yellow"
-                  >
-                    <MessageSquareWarning className="size-4" aria-hidden="true" />
-                    Zgłoś problem z lekcją
-                  </button>
-                )}
-              </div>
-            )}
             {user?.role === "tutor" && onOpenTutorStudents && (
               <button
                 type="button"

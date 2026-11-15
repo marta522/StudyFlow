@@ -25,12 +25,6 @@ export const SubjectRequestStatus = {
   REJECTED: 'REJECTED',
 } as const;
 
-export const LessonIssueStatus = {
-  OPEN: 'OPEN',
-  IN_PROGRESS: 'IN_PROGRESS',
-  RESOLVED: 'RESOLVED',
-} as const;
-
 export type UserStatusValue = (typeof UserStatus)[keyof typeof UserStatus];
 export type SubjectStatusValue =
   (typeof SubjectStatus)[keyof typeof SubjectStatus];
